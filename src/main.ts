@@ -1,6 +1,6 @@
 import { app, Tray, Menu, desktopCapturer, BrowserWindow, ipcMain } from "electron";
 import * as path from "path";
-import { Observable, Subscription, defer, mergeMap, pairwise, reduce, repeat, startWith } from "rxjs";
+import { Observable, Subscription, defer, mergeMap, repeat } from "rxjs";
 import { createWorker } from "tesseract.js";
 import { CaptureData } from "./capture";
 import Tesseract = require("tesseract.js");
@@ -18,30 +18,46 @@ app.whenReady().then(() => {
   appTray.setToolTip('This is my application.');
   appTray.setContextMenu(contextMenu);
 
+  const windows = new Map<string, BrowserWindow>();
+
   sourcesSubscription = defer(async () => {
     const allSources = await desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } });
     //console.debug("Available sources: " + JSON.stringify(allSources));
-    return [""];
-    // return allSources.filter(w => w.name == "Feuille De Table").map(w => w.id);
+    //return [""];
+    return allSources.filter(w => w.name == "Feuille de Table").map(w => w.id);
   }).pipe(
     repeat({ delay: 5000 }),
-    startWith([] as string[]),
-    pairwise(),
-    mergeMap(([prevSources, sources]) => sources.filter(id => !prevSources.includes(id)))
   ).subscribe({
-    next: (sourceId) => {
-      const captureWindow = new BrowserWindow({
-        show: false, webPreferences: {
-          offscreen: true,
-          preload: path.join(__dirname, 'capture.js'),
-          nodeIntegration: true
+    next: (sourceIds) => {
+      try {
+        // Create hidden capture window for new sources
+        for (const sourceId of sourceIds) {
+          if (windows.has(sourceId)) continue;
+          console.debug(`Creating capturing window for '${sourceId}'`);
+          const captureWindow = new BrowserWindow({
+            show: false, webPreferences: {
+              offscreen: true,
+              preload: path.join(__dirname, 'capture.js'),
+              nodeIntegration: true
+            }
+          });
+          captureWindow.webContents.on('console-message', (_, level, message) => {
+            console.log(message);
+          });      
+          captureWindow.loadFile("assets/capture-window.html", { hash: sourceId });
+          // captureWindow.webContents.openDevTools({ mode: "detach" });
+          windows.set(sourceId, captureWindow);
         }
-      });
-      captureWindow.webContents.on('console-message', (_, level, message) => {
-        console.log(`Capture [${level}]: ${message}`);
-      });      
-      captureWindow.loadFile("assets/capture-window.html", { hash: sourceId });
-      //captureWindow.webContents.openDevTools({ mode: "detach" });
+        // Delete capture window for unavailable sources
+        for (const [ sourceId, window ] of windows.entries()) {
+          if (sourceIds.includes(sourceId)) continue;
+          console.debug(`Closing capturing window for '${sourceId}'`);
+          window.close();
+          windows.delete(sourceId);
+        }
+      } catch (error) {
+        console.error("Source windows error: " + error);
+      }
     }
   });
 
@@ -105,7 +121,6 @@ app.whenReady().then(() => {
             return p ? Number(p[1]) : null;
           }) : Promise.resolve(null),
           dataUrl.matchCode ? (await ocrCodeScheduler).addJob("recognize", dataUrl.matchCode).then(r => {
-            console.log("Match code: " + r.data.text);
             const p = r.data.text.trim().match(/^([A-Z]{7})$/);
             return p ? p[1] : null
           }) : Promise.resolve(null)
@@ -129,3 +144,7 @@ app.on('before-quit', function () {
   ocrSubscription?.unsubscribe();
   appTray?.destroy();
 });
+
+app.on('window-all-closed', () => {
+  app.dock?.hide();
+})
