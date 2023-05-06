@@ -111,18 +111,18 @@ window.addEventListener("DOMContentLoaded", async () => {
       }
 
       return {
-        chrono: chronoSpot?.checkData(),
-        homeScore: homeScoreSpot?.checkData(),
-        awayScore: awayScoreSpot?.checkData(),
-        matchCode: matchCodeSpot?.checkData()
+        chrono: chronoSpot?.checkData() ?? undefined,
+        homeScore: homeScoreSpot?.checkData() ?? undefined,
+        awayScore: awayScoreSpot?.checkData() ?? undefined,
+        matchCode: matchCodeSpot?.checkData() ?? undefined
       } as CaptureData;
     }).pipe(
       repeat({ delay: 5000 })
     ).subscribe({
       next: (dataUrl) => {
-        //console.debug("Data: " + JSON.stringify(dataUrl, undefined, 2));
+        //console.debug("Capture data: " + JSON.stringify(dataUrl, undefined, 2));
         if (dataUrl.chrono || dataUrl.homeScore || dataUrl.awayScore || dataUrl.matchCode) {
-          ipcRenderer.send("capture-data", dataUrl);
+          ipcRenderer.send("capture-data:" + sourceId, dataUrl);
         }
       }
     });

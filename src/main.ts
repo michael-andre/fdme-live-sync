@@ -1,9 +1,14 @@
 import { app, Tray, Menu, desktopCapturer, BrowserWindow, ipcMain } from "electron";
 import * as path from "path";
-import { Observable, Subscription, defer, mergeMap, repeat } from "rxjs";
+import { Observable, Subscription, defer, distinctUntilChanged, map, mergeMap, pairwise, repeat, startWith, throttleTime } from "rxjs";
 import { createWorker } from "tesseract.js";
 import { CaptureData } from "./capture";
 import Tesseract = require("tesseract.js");
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection } from 'firebase/firestore/lite';
+import { UpdateData, doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { isEqual, merge } from "lodash-es";
+import { LiveUpdate } from "./data";
 
 let appTray: Tray | undefined;
 let sourcesSubscription: Subscription | undefined;
@@ -11,6 +16,7 @@ let ocrSubscription: Subscription | undefined;
 
 app.whenReady().then(() => {
 
+  // Configure tray icon
   appTray = new Tray(path.join(__dirname, "../assets/icon.png"));
   const contextMenu = Menu.buildFromTemplate([
     { label: "Fermer", type: "normal", click: () => app.quit() }
@@ -18,22 +24,64 @@ app.whenReady().then(() => {
   appTray.setToolTip('This is my application.');
   appTray.setContextMenu(contextMenu);
 
-  const windows = new Map<string, BrowserWindow>();
+  // Init OCR matchers
+  const initOcrMatcher = <T>(whiteList: string, regex: RegExp, map: (match: RegExpMatchArray) => T) => {
+    const scheduler = createWorker().then(async worker => {
+      await worker.loadLanguage('eng');
+      await worker.initialize('eng');
+      await worker.setParameters({
+        tessedit_ocr_engine_mode: Tesseract.OEM.TESSERACT_ONLY,
+        tessedit_char_whitelist: whiteList,
+        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_WORD
+      });
+      const scheduler = Tesseract.createScheduler();
+      scheduler.addWorker(worker);
+      return scheduler;
+    });
+    return async (input: Tesseract.ImageLike | undefined) => {
+      if (!input) return undefined;
+      try {
+        const text = (await (await scheduler).addJob("recognize", input)).data.text.trim();
+        const match = text.match(regex);
+        if (!match) console.warn(`Unrecognized data: '${text}' (against ${regex})`);
+        return match ? map(match) : undefined;
+      } catch (error) {
+        console.error("OCR error: " + error);
+        return undefined;
+      }
+    };
+  };
+  const ocrChronoMatcher = initOcrMatcher('0123456789:', /^(\d+):(\d+)$/, p => Number(p[1]) * 60 + Number(p[2]));
+  const ocrScoreMatcher = initOcrMatcher('0123456789', /^(\d+)$/, p => Number(p[1]));
+  const ocrCodeMatcher = initOcrMatcher('ABCDEFGHIJKLMNOPQRSTUVWXYZ', /^([A-Z]{7})$/, p => p[1]);
 
+  const firebaseApp = initializeApp({
+    apiKey: "AIzaSyBX4HCXjx5leejavOLGerFB2uqD8gTsV_M",
+    authDomain: "uson-handball.firebaseapp.com",
+    databaseURL: "https://uson-handball.firebaseio.com",
+    projectId: "uson-handball",
+    storageBucket: "uson-handball.appspot.com",
+    messagingSenderId: "803331291747",
+    appId: "1:803331291747:web:c9fb824d1a8c2f74439656"
+  });
+  const liveUpdates = collection(getFirestore(firebaseApp), "liveUpdates");
+
+  // Init capture windows subscription
+  const captureWindowCallbacks = new Map<string, () => void>();
   sourcesSubscription = defer(async () => {
     const allSources = await desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } });
-    //console.debug("Available sources: " + JSON.stringify(allSources));
-    //return [""];
     return allSources.filter(w => w.name == "Feuille de Table").map(w => w.id);
   }).pipe(
     repeat({ delay: 5000 }),
   ).subscribe({
     next: (sourceIds) => {
       try {
+
         // Create hidden capture window for new sources
         for (const sourceId of sourceIds) {
-          if (windows.has(sourceId)) continue;
-          console.debug(`Creating capturing window for '${sourceId}'`);
+          if (captureWindowCallbacks.has(sourceId)) continue;
+
+          console.debug(`Creating capture window for '${sourceId}'`);
           const captureWindow = new BrowserWindow({
             show: false, webPreferences: {
               offscreen: true,
@@ -46,94 +94,60 @@ app.whenReady().then(() => {
           });      
           captureWindow.loadFile("assets/capture-window.html", { hash: sourceId });
           // captureWindow.webContents.openDevTools({ mode: "detach" });
-          windows.set(sourceId, captureWindow);
+
+          const ocrSubscription = new Observable<CaptureData>((sub) => {
+            const listener = (_: unknown, data: CaptureData) => sub.next(data);
+            ipcMain.on("capture-data:" + sourceId, listener);
+            return () => ipcMain.off("capture-data:" + sourceId, listener);
+          }).pipe(
+            mergeMap(async (dataUrl: CaptureData) => {
+              const [ chrono, homeScore, awayScore, matchCode ] = await Promise.all([
+                ocrCodeMatcher(dataUrl.matchCode),
+                ocrChronoMatcher(dataUrl.chrono),
+                ocrScoreMatcher(dataUrl.homeScore),
+                ocrScoreMatcher(dataUrl.awayScore)
+              ]);
+              return { matchCode, chrono, homeScore, awayScore } as Partial<MatchUpdate>;
+            }),
+            startWith({} as Partial<MatchUpdate>),
+            pairwise(),
+            map(([ prev, next ]) => merge(prev, next)),
+            distinctUntilChanged(isEqual),
+            throttleTime(30000),
+            mergeMap(async (update: Partial<MatchUpdate>) => {
+              console.debug(`Update: ${JSON.stringify(update)}`);
+              if (!update.matchCode) return;
+              try {
+                await setDoc(doc(liveUpdates, update.matchCode), {
+                  chrono: update.chrono ?? null,
+                  score: update?.homeScore != undefined && update?.awayScore != undefined
+                    ? [ update.homeScore, update.awayScore ]
+                    : null,
+                  timestamp: serverTimestamp()
+                } as UpdateData<LiveUpdate>);  
+              } catch (error) {
+                console.log("Failed to send update: " + error);
+              }
+            })
+          ).subscribe();
+
+          captureWindowCallbacks.set(sourceId, () => {
+            ocrSubscription?.unsubscribe();
+            captureWindow.close();
+          });
         }
+
         // Delete capture window for unavailable sources
-        for (const [ sourceId, window ] of windows.entries()) {
+        for (const [ sourceId, callback ] of captureWindowCallbacks.entries()) {
           if (sourceIds.includes(sourceId)) continue;
-          console.debug(`Closing capturing window for '${sourceId}'`);
-          window.close();
-          windows.delete(sourceId);
+          console.debug(`Closing capture window for '${sourceId}'`);
+          callback();
+          captureWindowCallbacks.delete(sourceId);
         }
+
       } catch (error) {
         console.error("Source windows error: " + error);
       }
-    }
-  });
-
-  const ocrChronoScheduler = createWorker().then(async worker => {
-    await worker.loadLanguage('eng');
-    await worker.initialize('eng');
-    await worker.setParameters({
-      tessedit_ocr_engine_mode: Tesseract.OEM.TESSERACT_ONLY,
-      tessedit_char_whitelist: '0123456789:',
-      tessedit_pageseg_mode: Tesseract.PSM.SINGLE_WORD
-    });
-    const scheduler = Tesseract.createScheduler();
-    scheduler.addWorker(worker);
-    return scheduler;
-  });
-  const ocrScoreScheduler = createWorker().then(async worker => {
-    await worker.loadLanguage('eng');
-    await worker.initialize('eng');
-    await worker.setParameters({
-      tessedit_ocr_engine_mode: Tesseract.OEM.TESSERACT_ONLY,
-      tessedit_char_whitelist: '0123456789',
-      tessedit_pageseg_mode: Tesseract.PSM.SINGLE_WORD
-    });
-    const scheduler = Tesseract.createScheduler();
-    scheduler.addWorker(worker);
-    return scheduler;
-  });
-  const ocrCodeScheduler = createWorker().then(async worker => {
-    await worker.loadLanguage('eng');
-    await worker.initialize('eng');
-    await worker.setParameters({
-      tessedit_ocr_engine_mode: Tesseract.OEM.TESSERACT_ONLY,
-      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
-      tessedit_pageseg_mode: Tesseract.PSM.SINGLE_WORD
-    });
-    const scheduler = Tesseract.createScheduler();
-    scheduler.addWorker(worker);
-    return scheduler;
-  });
-  
-  ocrSubscription = new Observable<CaptureData>((sub) => {
-    const listener = (_: unknown, data: CaptureData) => {
-      sub.next(data);
-    };
-    ipcMain.on("capture-data", listener);
-    return () => ipcMain.off("capture-data", listener);
-  }).pipe(
-    mergeMap(async (dataUrl: CaptureData) => {
-      try {
-        const [ chrono, homeScore, awayScore, matchCode ] = await Promise.all([
-          dataUrl.chrono ? (await ocrChronoScheduler).addJob("recognize", dataUrl.chrono).then(r => {
-            const p = r.data.text.trim().match(/^(\d+):(\d+)$/);
-            return p ? Number(p[1]) * 60 + Number(p[2]) : null;
-          }) : Promise.resolve(null),
-          dataUrl.homeScore ? (await ocrScoreScheduler).addJob("recognize", dataUrl.homeScore).then(r => {
-            const p = r.data.text.trim().match(/^(\d+)$/);
-            return p ? Number(p[1]) : null;
-          }) : Promise.resolve(null),
-          dataUrl.awayScore ? (await ocrScoreScheduler).addJob("recognize", dataUrl.awayScore).then(r => {
-            const p = r.data.text.trim().match(/^(\d+)$/);
-            return p ? Number(p[1]) : null;
-          }) : Promise.resolve(null),
-          dataUrl.matchCode ? (await ocrCodeScheduler).addJob("recognize", dataUrl.matchCode).then(r => {
-            const p = r.data.text.trim().match(/^([A-Z]{7})$/);
-            return p ? p[1] : null
-          }) : Promise.resolve(null)
-        ]);
-        return { chrono, homeScore, awayScore, matchCode };
-      } catch (error) {
-        console.warn("OCR error: " + error);
-        return {};
-      }
-    })
-  ).subscribe({
-    next: (result) => {
-      console.log(JSON.stringify(result));
     }
   });
   
@@ -147,4 +161,11 @@ app.on('before-quit', function () {
 
 app.on('window-all-closed', () => {
   app.dock?.hide();
-})
+});
+
+type MatchUpdate = {
+  matchCode: string,
+  homeScore: number,
+  awayScore: number,
+  chrono: number
+};
