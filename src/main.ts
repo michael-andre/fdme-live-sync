@@ -3,11 +3,11 @@ import * as path from "path";
 import { Observable, Subscription, defer, distinctUntilChanged, map, mergeMap, pairwise, repeat, startWith, throttleTime } from "rxjs";
 import { createWorker } from "tesseract.js";
 import { CaptureData } from "./capture";
-import Tesseract = require("tesseract.js");
+import * as Tesseract from "tesseract.js";
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection } from 'firebase/firestore/lite';
 import { UpdateData, doc, serverTimestamp, setDoc } from "firebase/firestore";
-import { isEqual, merge } from "lodash-es";
+import { isEqual, merge } from "lodash";
 import { LiveUpdate } from "./data";
 
 let appTray: Tray | undefined;
