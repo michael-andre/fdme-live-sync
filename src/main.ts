@@ -21,7 +21,7 @@ app.whenReady().then(() => {
   const contextMenu = Menu.buildFromTemplate([
     { label: "Fermer", type: "normal", click: () => app.quit() }
   ]);
-  appTray.setToolTip('This is my application.');
+  appTray.setToolTip("Synchronisation FDME");
   appTray.setContextMenu(contextMenu);
 
   // Init OCR matchers
@@ -83,6 +83,11 @@ app.whenReady().then(() => {
         // Create hidden capture window for new sources
         for (const sourceId of sourceIds) {
           if (captureWindowCallbacks.has(sourceId)) continue;
+
+          appTray?.displayBalloon({
+            title: "Sychronisation FDME en cours",
+            content: "Merci de configurer correctement le chronomètre."
+          });
 
           console.debug(`Creating capture window for '${sourceId}'`);
           const captureWindow = new BrowserWindow({
