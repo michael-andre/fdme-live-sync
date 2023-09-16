@@ -1,6 +1,6 @@
 {
   "name": "fdme-live-sync",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "A live reporting background app for FDME",
   "main": "dist/main.js",
   "author": "Michaël André",
@@ -28,6 +28,7 @@
     "@typescript-eslint/eslint-plugin": "^6.7.0",
     "@typescript-eslint/parser": "^6.7.0",
     "electron": "^26.2.1",
+    "electron-builder": "^24.6.4",
     "firebase": "^10.4.0",
     "lodash": "^4.17.21",
     "luxon": "^3.4.3",
