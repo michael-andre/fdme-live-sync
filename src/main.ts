@@ -6,7 +6,7 @@ import { CaptureData } from "./capture";
 import * as Tesseract from "tesseract.js";
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection } from 'firebase/firestore/lite';
-import { UpdateData, doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { DocumentReference, UpdateData, doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { isEqual, merge } from "lodash";
 import { LiveUpdate } from "./data";
 
@@ -28,9 +28,8 @@ app.whenReady().then(() => {
   const initOcrMatcher = <T>(whiteList: string, regex: RegExp, map: (match: RegExpMatchArray) => T) => {
     const scheduler = createWorker().then(async worker => {
       await worker.loadLanguage('eng');
-      await worker.initialize('eng');
+      await worker.initialize('eng', Tesseract.OEM.TESSERACT_ONLY);
       await worker.setParameters({
-        tessedit_ocr_engine_mode: Tesseract.OEM.TESSERACT_ONLY,
         tessedit_char_whitelist: whiteList,
         tessedit_pageseg_mode: Tesseract.PSM.SINGLE_WORD
       });
@@ -51,7 +50,11 @@ app.whenReady().then(() => {
       }
     };
   };
-  const ocrChronoMatcher = initOcrMatcher('0123456789:', /^(\d+):(\d+)$/, p => Number(p[1]) * 60 + Number(p[2]));
+  const ocrChronoMatcher = initOcrMatcher('0123456789:-', /^(\d+):(\d+)$/, p => {
+    const min = Number(p[1]);
+    const sec = Number(p[2]);
+    return min >= 0 && sec >= 0 ? min * 60 + sec : undefined;
+  });
   const ocrScoreMatcher = initOcrMatcher('0123456789', /^(\d+)$/, p => Number(p[1]));
   const ocrCodeMatcher = initOcrMatcher('ABCDEFGHIJKLMNOPQRSTUVWXYZ', /^([A-Z]{7})$/, p => p[1]);
 
@@ -95,6 +98,8 @@ app.whenReady().then(() => {
           captureWindow.loadFile("assets/capture-window.html", { hash: sourceId });
           // captureWindow.webContents.openDevTools({ mode: "detach" });
 
+          let firebaseDoc: DocumentReference | undefined;
+
           const ocrSubscription = new Observable<CaptureData>((sub) => {
             const listener = (_: unknown, data: CaptureData) => sub.next(data);
             ipcMain.on("capture-data:" + sourceId, listener);
@@ -118,7 +123,8 @@ app.whenReady().then(() => {
               console.debug(`Update: ${JSON.stringify(update)}`);
               if (!update.matchCode) return;
               try {
-                await setDoc(doc(liveUpdates, update.matchCode), {
+                firebaseDoc = firebaseDoc ?? doc(liveUpdates, update.matchCode);
+                await setDoc(firebaseDoc, {
                   chrono: update.chrono ?? null,
                   score: update?.homeScore != undefined && update?.awayScore != undefined
                     ? [ update.homeScore, update.awayScore ]
