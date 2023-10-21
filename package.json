@@ -14,26 +14,26 @@
     "dist": "electron-builder --win"
   },
   "dependencies": {
-    "firebase": "^9.21.0",
-    "lodash": "^4.17.21",
-    "luxon": "^3.3.0",
-    "rxjs": "7.8.1",
-    "tesseract.js": "^4.0.6",
-    "tslib": "^2.5.2"
-  },
-  "devDependencies": {
-    "@types/lodash-es": "^4.17.9",
-    "@types/luxon": "^3.3.2",
-    "@types/w3c-image-capture": "^1.0.7",
-    "@typescript-eslint/eslint-plugin": "^6.7.0",
-    "@typescript-eslint/parser": "^6.7.0",
-    "electron": "^26.2.1",
-    "electron-builder": "^24.6.4",
-    "firebase": "^10.4.0",
+    "firebase": "^10.5.0",
     "lodash": "^4.17.21",
     "luxon": "^3.4.3",
     "rxjs": "^7.8.1",
-    "tesseract.js": "^4.1.2",
+    "tesseract.js": "^4.1.4",
+    "tslib": "^2.6.2"
+  },
+  "devDependencies": {
+    "@types/lodash-es": "^4.17.10",
+    "@types/luxon": "^3.3.3",
+    "@types/w3c-image-capture": "^1.0.9",
+    "@typescript-eslint/eslint-plugin": "^6.8.0",
+    "@typescript-eslint/parser": "^6.8.0",
+    "electron": "^27.0.1",
+    "electron-builder": "^24.6.4",
+    "firebase": "^10.5.0",
+    "lodash": "^4.17.21",
+    "luxon": "^3.4.3",
+    "rxjs": "^7.8.1",
+    "tesseract.js": "^5.0.2",
     "typescript": "^5.2.2"
   },
   "build": {

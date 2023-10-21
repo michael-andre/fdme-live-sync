@@ -26,9 +26,7 @@ app.whenReady().then(() => {
 
   // Init OCR matchers
   const initOcrMatcher = <T>(whiteList: string, regex: RegExp, map: (match: RegExpMatchArray) => T) => {
-    const scheduler = createWorker().then(async worker => {
-      await worker.loadLanguage('eng');
-      await worker.initialize('eng', Tesseract.OEM.TESSERACT_ONLY);
+    const scheduler = createWorker('eng', Tesseract.OEM.TESSERACT_ONLY).then(async worker => {
       await worker.setParameters({
         tessedit_char_whitelist: whiteList,
         tessedit_pageseg_mode: Tesseract.PSM.SINGLE_WORD
