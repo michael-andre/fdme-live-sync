@@ -1,21 +1,15 @@
 import { Point, Rectangle, ipcRenderer } from "electron";
+import { nativeImage } from "electron/common";
 import { defer, repeat } from "rxjs";
 
 const sourceId = location.hash.substring(1);
 console.debug(`Configure capture window for '${sourceId}'`);
 
-/*const fakeCanvas = document.createElement("canvas");
-const img = new Image();
-img.onload = () => {
-  fakeCanvas.height = Math.min(img.height, 80);
-  fakeCanvas.width = img.width;
-  fakeCanvas.getContext("2d", { willReadFrequently: true })?.drawImage(img, 0, 0);
-};
-img.src = nativeImage.createFromPath("assets/sample.png").toDataURL();*/
-
 window.addEventListener("DOMContentLoaded", async () => {
 
-  const stream = await navigator.mediaDevices.getUserMedia({
+  const stream = sourceId == "@test"
+    ? createTestStream()
+    : await navigator.mediaDevices.getUserMedia({
     audio: false,
     video: {
       mandatory: {
@@ -105,7 +99,7 @@ window.addEventListener("DOMContentLoaded", async () => {
           width: Math.round(width * 0.25),
           height: canvas.height - topBarHeight
         }, [ 0xff, 0xc0, 0xff ]);
-        console.debug(`Match code score: ${JSON.stringify(matchCodeRect)}`);
+        console.debug(`Match code rect: ${JSON.stringify(matchCodeRect)}`);
         matchCodeSpot = matchCodeRect ? new CaptureSpot(video, matchCodeRect) : null;
 
       }
@@ -253,4 +247,16 @@ function findColorPoint(
     return { x: rect.x + pt.x, y: rect.y + pt.y };
   }
   return null;
+}
+
+function createTestStream() {
+  const canvas = document.createElement("canvas");
+  const img = new Image();
+  img.onload = () => {
+    canvas.height = img.height;
+    canvas.width = img.width;
+    canvas.getContext("2d", { willReadFrequently: true })?.drawImage(img, 0, 0);
+  };
+  img.src = nativeImage.createFromPath("assets/fdme-test.png").toDataURL();
+  return canvas.captureStream();
 }
