@@ -24,7 +24,7 @@ app.whenReady().then(() => {
   if (testMode) console.debug("Running in test mode");
 
   // Configure tray icon
-  appTray = new Tray(path.join(__dirname, "../assets/icon.png"));
+  appTray = new Tray(path.join(__dirname, "..", "assets", "icon.png"));
   const contextMenu = Menu.buildFromTemplate([
     { label: "Fermer", type: "normal", click: () => app.quit() }
   ]);
@@ -33,7 +33,11 @@ app.whenReady().then(() => {
 
   // Init OCR matchers
   const initOcrMatcher = <T>(whiteList: string, regex: RegExp, map: (match: RegExpMatchArray) => T) => {
-    const scheduler = createWorker("eng", Tesseract.OEM.TESSERACT_ONLY).then(async worker => {
+    const scheduler = createWorker("eng", Tesseract.OEM.TESSERACT_ONLY, {
+      langPath: path.join(__dirname, "..", "assets", "ocr-data"),
+      cacheMethod: "none",
+      gzip: false
+    }).then(async worker => {
       await worker.setParameters({
         tessedit_char_whitelist: whiteList,
         tessedit_pageseg_mode: Tesseract.PSM.SINGLE_WORD
