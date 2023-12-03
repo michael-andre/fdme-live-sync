@@ -1,15 +1,16 @@
-import { app, Tray, Menu, desktopCapturer, BrowserWindow, ipcMain } from "electron";
-import * as path from "path";
-import { Observable, Subscription, defer, distinctUntilChanged, map, mergeMap, pairwise, repeat, startWith, tap, throttleTime } from "rxjs";
-import { createWorker } from "tesseract.js";
-import { CaptureData } from "./capture";
-import * as Tesseract from "tesseract.js";
+import { BrowserWindow, Menu, Tray, app, desktopCapturer, ipcMain } from "electron";
 import { initializeApp } from "firebase/app";
 import { CustomProvider, initializeAppCheck } from "firebase/app-check";
+import { DocumentReference, collection, doc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore/lite";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { getFirestore, collection, doc, DocumentReference, serverTimestamp, setDoc } from "firebase/firestore/lite";
 import { isEqual, merge } from "lodash";
+import * as path from "path";
+import { Observable, Subscription, defer, distinctUntilChanged, map, mergeMap, pairwise, repeat, startWith, tap, throttleTime } from "rxjs";
+import * as Tesseract from "tesseract.js";
+import { createWorker } from "tesseract.js";
+import { CaptureData } from "./capture";
 import { LiveUpdate } from "./data";
+import * as log from "electron-log/main";
 
 export type AppCheckTokenRequest = Readonly<{ appId: string; }>
 export type AppCheckToken = Readonly<{ token: string, expiresInMillis: number }>;
@@ -17,6 +18,9 @@ export type AppCheckToken = Readonly<{ token: string, expiresInMillis: number }>
 let appTray: Tray | undefined;
 let sourcesSubscription: Subscription | undefined;
 let ocrSubscription: Subscription | undefined;
+
+log.initialize({ preload: true });
+Object.assign(console, log.functions);
 
 app.whenReady().then(() => {
 
