@@ -35,7 +35,12 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     const sub = defer(async () => {
 
-      if (video.videoWidth !== width || video.videoHeight !== height || !homeHintSpot?.check()) {
+      if (
+        video.videoWidth !== width || video.videoHeight !== height
+        || !chronoSpot || !matchCodeSpot
+        || !homeScoreSpot || !awayScoreSpot
+        || !homeHintSpot?.check()
+      ) {
 
         width = video.videoWidth;
         height = video.videoHeight;
