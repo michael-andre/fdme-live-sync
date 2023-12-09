@@ -91,25 +91,25 @@ app.whenReady().then(() => {
             "iam-appCheckToken"
           );
           console.log("Fetching App Check token");
-          const token  = (await getAppCheckToken({ appId: firebaseAppId })).data;
+          const token = (await getAppCheckToken({ appId: firebaseAppId })).data;
           return {
             token: token.token,
             expireTimeMillis: Date.now() + token.expiresInMillis
-          }  
+          }
         } catch (error) {
           console.error("AppCheck error: " + error);
           throw Error("AppCheck error");
         }
       },
     }),
-    isTokenAutoRefreshEnabled: true    
+    isTokenAutoRefreshEnabled: true
   });
   const liveUpdates = collection(getFirestore(firebaseApp), "liveUpdates");
 
   // Init capture windows subscription
   const captureWindowCallbacks = new Map<string, () => void>();
   sourcesSubscription = defer(async () => {
-    if (testMode) return [ "@test" ];
+    if (testMode) return ["@test"];
     const allSources = await desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } });
     return allSources.filter(w => w.name == "Feuille de Table").map(w => w.id);
   }).pipe(
@@ -138,7 +138,7 @@ app.whenReady().then(() => {
           if (testMode) {
             captureWindow.webContents.on("console-message", (_event, _level, message) => {
               console.debug(message);
-            });  
+            });
           }
           captureWindow.loadFile("assets/capture-window.html", { hash: sourceId });
           // captureWindow.webContents.openDevTools({ mode: "detach" });
@@ -151,7 +151,7 @@ app.whenReady().then(() => {
             return () => ipcMain.off("capture-data:" + sourceId, listener);
           }).pipe(
             mergeMap(async (dataUrl: CaptureData) => {
-              const [ matchCode, chrono, homeScore, awayScore ] = await Promise.all([
+              const [matchCode, chrono, homeScore, awayScore] = await Promise.all([
                 ocrCodeMatcher(dataUrl.matchCode),
                 ocrChronoMatcher(dataUrl.chrono),
                 ocrScoreMatcher(dataUrl.homeScore),
@@ -162,7 +162,7 @@ app.whenReady().then(() => {
             tap(u => { if (testMode) console.debug(`OCR update: ${JSON.stringify(u)}`); }),
             startWith({} as Partial<MatchUpdate>),
             pairwise(),
-            map(([ prev, next ]) => merge(prev, next)),
+            map(([prev, next]) => merge(prev, next)),
             distinctUntilChanged(isEqual),
             throttleTime(30000),
             mergeMap(async (update: Partial<MatchUpdate>) => {
@@ -172,7 +172,7 @@ app.whenReady().then(() => {
                 const liveUpdate: LiveUpdate = {
                   chrono: update.chrono ?? null,
                   score: update?.homeScore != undefined && update?.awayScore != undefined
-                    ? [ update.homeScore, update.awayScore ]
+                    ? [update.homeScore, update.awayScore]
                     : null,
                   timestamp: serverTimestamp()
                 }
@@ -191,7 +191,7 @@ app.whenReady().then(() => {
         }
 
         // Delete capture window for unavailable sources
-        for (const [ sourceId, callback ] of captureWindowCallbacks.entries()) {
+        for (const [sourceId, callback] of captureWindowCallbacks.entries()) {
           if (sourceIds.includes(sourceId)) continue;
           console.debug(`Closing capture window for '${sourceId}'`);
           callback();
@@ -203,7 +203,7 @@ app.whenReady().then(() => {
       }
     }
   });
-  
+
 });
 
 app.on("before-quit", function () {
