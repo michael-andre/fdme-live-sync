@@ -1,23 +1,20 @@
-import { BrowserWindow, Menu, Tray, app, desktopCapturer, ipcMain } from "electron";
+import { Menu, Tray, app } from "electron";
+import * as log from "electron-log/main";
 import { initializeApp } from "firebase/app";
 import { CustomProvider, initializeAppCheck } from "firebase/app-check";
 import { DocumentReference, collection, doc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore/lite";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { isEqual, merge } from "lodash";
 import * as path from "path";
-import { Observable, Subscription, defer, distinctUntilChanged, map, mergeMap, pairwise, repeat, startWith, tap, throttleTime } from "rxjs";
-import * as Tesseract from "tesseract.js";
-import { createWorker } from "tesseract.js";
-import { CaptureData } from "./capture";
+import { Subscription, mergeMap, merge as mergeObservables, throttleTime } from "rxjs";
 import { LiveUpdate } from "./data";
-import * as log from "electron-log/main";
+import { FDMEProvider } from "./fdme-provider";
+import { ScorepadProvider } from "./scorepad-provider";
 
 export type AppCheckTokenRequest = Readonly<{ appId: string; }>
 export type AppCheckToken = Readonly<{ token: string, expiresInMillis: number }>;
 
 let appTray: Tray | undefined;
-let sourcesSubscription: Subscription | undefined;
-let ocrSubscription: Subscription | undefined;
+let updatesSub: Subscription | undefined;
 
 log.initialize({ preload: true });
 Object.assign(console, log.functions);
@@ -35,41 +32,10 @@ app.whenReady().then(() => {
   appTray.setToolTip("Synchronisation FDME");
   appTray.setContextMenu(contextMenu);
 
-  // Init OCR matchers
-  const initOcrMatcher = <T>(whiteList: string, regex: RegExp, map: (match: RegExpMatchArray) => T) => {
-    const scheduler = createWorker("eng", Tesseract.OEM.TESSERACT_ONLY, {
-      langPath: path.join(__dirname, "..", "assets", "ocr-data"),
-      cacheMethod: "none",
-      gzip: false
-    }).then(async worker => {
-      await worker.setParameters({
-        tessedit_char_whitelist: whiteList,
-        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_WORD
-      });
-      const scheduler = Tesseract.createScheduler();
-      scheduler.addWorker(worker);
-      return scheduler;
-    });
-    return async (input: Tesseract.ImageLike | undefined) => {
-      if (!input) return undefined;
-      try {
-        const text = (await (await scheduler).addJob("recognize", input)).data.text.trim();
-        const match = text.match(regex);
-        if (!match) console.warn(`Unrecognized data: '${text}' (against ${regex})`);
-        return match ? map(match) : undefined;
-      } catch (error) {
-        console.error("OCR error: " + error);
-        return undefined;
-      }
-    };
-  };
-  const ocrChronoMatcher = initOcrMatcher("0123456789:-", /^(\d+):(\d+)$/, p => {
-    const min = Number(p[1]);
-    const sec = Number(p[2]);
-    return min >= 0 && sec >= 0 ? min * 60 + sec : undefined;
-  });
-  const ocrScoreMatcher = initOcrMatcher("0123456789", /^(\d+)$/, p => Number(p[1]));
-  const ocrCodeMatcher = initOcrMatcher("ABCDEFGHIJKLMNOPQRSTUVWXYZ", testMode ? /^(FTESTXX)$/ : /^([A-Z]{7})$/, p => p[1]);
+  const fdmeUpdates = new FDMEProvider(testMode).observeUpdates();
+  const scorepadUpdates = new ScorepadProvider().observeUpdates();
+
+  const updates = mergeObservables(fdmeUpdates, scorepadUpdates);
 
   const firebaseAppId = "1:803331291747:web:c9fb824d1a8c2f74439656";
   const firebaseOptions = {
@@ -106,109 +72,32 @@ app.whenReady().then(() => {
   });
   const liveUpdates = collection(getFirestore(firebaseApp), "liveUpdates");
 
-  // Init capture windows subscription
-  const captureWindowCallbacks = new Map<string, () => void>();
-  sourcesSubscription = defer(async () => {
-    if (testMode) return ["@test"];
-    const allSources = await desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } });
-    return allSources.filter(w => w.name == "Feuille de Table").map(w => w.id);
-  }).pipe(
-    repeat({ delay: 5000 }),
-  ).subscribe({
-    next: (sourceIds) => {
+  let firebaseDoc: DocumentReference | undefined;
+
+  updatesSub = updates.pipe(
+    throttleTime(30000),
+    mergeMap(async (update: Partial<MatchUpdate>) => {
+      if (!update.matchCode) return;
       try {
-
-        // Create hidden capture window for new sources
-        for (const sourceId of sourceIds) {
-          if (captureWindowCallbacks.has(sourceId)) continue;
-
-          appTray?.displayBalloon({
-            title: "Sychronisation FDME en cours",
-            content: "Merci de configurer correctement le chronomètre."
-          });
-
-          console.debug(`Creating capture window for '${sourceId}'`);
-          const captureWindow = new BrowserWindow({
-            show: false, webPreferences: {
-              offscreen: true,
-              preload: path.join(__dirname, "capture.js"),
-              nodeIntegration: true
-            }
-          });
-          if (testMode) {
-            captureWindow.webContents.on("console-message", (_event, _level, message) => {
-              console.debug(message);
-            });
-          }
-          captureWindow.loadFile("assets/capture-window.html", { hash: sourceId });
-          // captureWindow.webContents.openDevTools({ mode: "detach" });
-
-          let firebaseDoc: DocumentReference | undefined;
-
-          const ocrSubscription = new Observable<CaptureData>((sub) => {
-            const listener = (_: unknown, data: CaptureData) => sub.next(data);
-            ipcMain.on("capture-data:" + sourceId, listener);
-            return () => ipcMain.off("capture-data:" + sourceId, listener);
-          }).pipe(
-            mergeMap(async (dataUrl: CaptureData) => {
-              const [matchCode, chrono, homeScore, awayScore] = await Promise.all([
-                ocrCodeMatcher(dataUrl.matchCode),
-                ocrChronoMatcher(dataUrl.chrono),
-                ocrScoreMatcher(dataUrl.homeScore),
-                ocrScoreMatcher(dataUrl.awayScore)
-              ]);
-              return { matchCode, chrono, homeScore, awayScore } as Partial<MatchUpdate>;
-            }),
-            tap(u => { if (testMode) console.debug(`OCR update: ${JSON.stringify(u)}`); }),
-            startWith({} as Partial<MatchUpdate>),
-            pairwise(),
-            map(([prev, next]) => merge(prev, next)),
-            distinctUntilChanged(isEqual),
-            throttleTime(30000),
-            mergeMap(async (update: Partial<MatchUpdate>) => {
-              if (!update.matchCode) return;
-              try {
-                firebaseDoc = firebaseDoc ?? doc(liveUpdates, update.matchCode);
-                const liveUpdate: LiveUpdate = {
-                  chrono: update.chrono ?? null,
-                  score: update?.homeScore != undefined && update?.awayScore != undefined
-                    ? [update.homeScore, update.awayScore]
-                    : null,
-                  timestamp: serverTimestamp()
-                }
-                console.debug(`Server update: ${JSON.stringify(liveUpdate)}`);
-                await setDoc(firebaseDoc, liveUpdate);
-              } catch (error) {
-                console.log("Failed to send update: " + error);
-              }
-            })
-          ).subscribe();
-
-          captureWindowCallbacks.set(sourceId, () => {
-            ocrSubscription?.unsubscribe();
-            captureWindow.close();
-          });
+        firebaseDoc = firebaseDoc ?? doc(liveUpdates, update.matchCode);
+        const liveUpdate: LiveUpdate = {
+          chrono: update.chrono ?? null,
+          score: update?.homeScore != undefined && update?.awayScore != undefined
+            ? [update.homeScore, update.awayScore]
+            : null,
+          timestamp: serverTimestamp()
         }
-
-        // Delete capture window for unavailable sources
-        for (const [sourceId, callback] of captureWindowCallbacks.entries()) {
-          if (sourceIds.includes(sourceId)) continue;
-          console.debug(`Closing capture window for '${sourceId}'`);
-          callback();
-          captureWindowCallbacks.delete(sourceId);
-        }
-
+        console.debug(`Server update: ${JSON.stringify(liveUpdate)}`);
+        await setDoc(firebaseDoc, liveUpdate);
       } catch (error) {
-        console.error("Source windows error: " + error);
+        console.log("Failed to send update: " + error);
       }
-    }
-  });
-
+    })
+  ).subscribe();
 });
 
 app.on("before-quit", function () {
-  sourcesSubscription?.unsubscribe();
-  ocrSubscription?.unsubscribe();
+  updatesSub?.unsubscribe();
   appTray?.destroy();
 });
 
@@ -216,7 +105,7 @@ app.on("window-all-closed", () => {
   app.dock?.hide();
 });
 
-type MatchUpdate = {
+export type MatchUpdate = {
   matchCode: string,
   homeScore: number,
   awayScore: number,
