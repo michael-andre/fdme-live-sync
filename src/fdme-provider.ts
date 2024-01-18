@@ -1,6 +1,6 @@
 import { BrowserWindow, desktopCapturer, ipcMain } from "electron";
 import * as path from "path";
-import { EMPTY, Observable, defer, distinctUntilChanged, map, mergeMap, pairwise, repeat, share, startWith, switchMap, tap } from "rxjs";
+import { EMPTY, Observable, defer, distinctUntilChanged, repeat, scan, share, startWith, switchMap, tap } from "rxjs";
 import * as tesseract from "tesseract.js";
 import { CaptureData } from "./fdme-capture";
 import { MatchUpdate } from "./main";
@@ -13,28 +13,28 @@ export class FDMEProvider {
   private ocrMatcher: (data: Partial<CaptureData>) => Promise<Partial<MatchUpdate>>;
 
   constructor(private testMode: boolean) {
-    const chronoMatcher = this.createOcrMatcher("0123456789:-", /^(\d+):(\d+)$/, p => {
+    const chronoMatcher = this.createOcrMatcher("numerical", "0123456789:-", /^(\d+):(\d+)$/, p => {
       const min = Number(p[1]);
       const sec = Number(p[2]);
       return min >= 0 && sec >= 0 ? min * 60 + sec : undefined;
     });
-    const scoreMatcher = this.createOcrMatcher("0123456789", /^(\d+)$/, p => Number(p[1]));
-    const codeMatcher = this.createOcrMatcher("ABCDEFGHIJKLMNOPQRSTUVWXYZ", testMode ? /^(FTESTXX)$/ : /^([A-Z]{7})$/, p => p[1]);
+    const scoreMatcher = this.createOcrMatcher("numerical", "0123456789", /^(\d+)$/, p => Number(p[1]));
+    const codeMatcher = this.createOcrMatcher("match-code", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", testMode ? /^(FTESTXX)$/ : /^([A-Z]{7})$/, p => p[1]);
 
-    this.ocrMatcher = async (dataUrl) => {
+    this.ocrMatcher = async (captureData) => {
       const [matchCode, chrono, homeScore, awayScore] = await Promise.all([
-        codeMatcher(dataUrl.matchCode),
-        chronoMatcher(dataUrl.chrono),
-        scoreMatcher(dataUrl.homeScore),
-        scoreMatcher(dataUrl.awayScore)
+        codeMatcher(captureData.matchCode),
+        chronoMatcher(captureData.chrono),
+        scoreMatcher(captureData.homeScore),
+        scoreMatcher(captureData.awayScore)
       ]);
-      return { matchCode, chrono, homeScore, awayScore } as Partial<MatchUpdate>;
+      return { matchCode, chrono, homeScore, awayScore, chronoStarted: captureData.chronoStarted } as Partial<MatchUpdate>;
     };
   }
 
-  private createOcrMatcher<T>(whiteList: string, regex: RegExp, map: (match: RegExpMatchArray) => T) {
+  private createOcrMatcher<T>(dataPath: "match-code" | "numerical", whiteList: string, regex: RegExp, map: (match: RegExpMatchArray) => T) {
     const scheduler = tesseract.createWorker("eng", tesseract.OEM.TESSERACT_ONLY, {
-      langPath: path.join(__dirname, "..", "assets", "ocr-data"),
+      langPath: path.join(__dirname, "..", "assets", "ocr-data/" + dataPath),
       cacheMethod: "none",
       gzip: false
     }).then(async worker => {
@@ -71,7 +71,7 @@ export class FDMEProvider {
         }
       });
       const dataListener = (_: unknown, data: CaptureData) => sub.next(data);
-      captureWindow.loadFile("assets/capture-window.html", { hash: sourceId });
+      captureWindow.loadFile("assets/window.html", { hash: sourceId });
       if (this.testMode) {
         captureWindow.webContents.on("console-message", (_event, _level, message) => {
           console.debug(message);
@@ -83,12 +83,10 @@ export class FDMEProvider {
         captureWindow.close();
       };
     }).pipe(
-      mergeMap((dataUrl: CaptureData) => this.ocrMatcher(dataUrl)),
-      tap(u => { if (this.testMode) console.debug(`OCR update: ${JSON.stringify(u)}`); }),
-      startWith({} as Partial<MatchUpdate>),
-      pairwise(),
-      map(([prev, next]) => merge(prev, next)),
+      switchMap((dataUrl: CaptureData) => this.ocrMatcher(dataUrl)),
+      scan((state, update) => merge(state, update), {} as Partial<MatchUpdate>),
       distinctUntilChanged(isEqual),
+      tap(u => { if (this.testMode) console.debug(`FDME update: ${JSON.stringify(u)}`); }),
       share()
     );
   }

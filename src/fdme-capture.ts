@@ -1,6 +1,18 @@
 import { Point, Rectangle, ipcRenderer } from "electron";
 import { nativeImage } from "electron/common";
-import { defer, repeat } from "rxjs";
+import { defer, repeat, switchMap, timer } from "rxjs";
+
+type InitContext = { context: CanvasRenderingContext2D, topBarHeight: number };
+
+const initialWindowDelayMs = 5000;
+const checkDelayMs = 2000;
+const appBackgroundColor = 0xf0f0f0;
+const chronoBackgroundColor = 0xffffff;
+const chronoStartColor = 0x80ff80;
+const chronoStopColor = 0xff0000;
+const homeTeamBackgroundColor = 0xc0ffff;
+const scoreBackgroundColor = 0xffffff;
+const matchCodeBackgroundColor = 0xffc0ff;
 
 const sourceId = location.hash.substring(1);
 console.debug(`Configure capture window for '${sourceId}'`);
@@ -10,113 +22,117 @@ window.addEventListener("DOMContentLoaded", async () => {
   const stream = sourceId == "@test"
     ? createTestStream()
     : await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: {
-      mandatory: {
-        chromeMediaSource: "desktop",
-        chromeMediaSourceId: sourceId
-      }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any
-  });
+      audio: false,
+      video: {
+        mandatory: {
+          chromeMediaSource: "desktop",
+          chromeMediaSourceId: sourceId
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any
+    });
   const track = stream.getVideoTracks()[0];
   const video = document.createElement("video");
 
   let width = 0;
   let height = 0;
-  let chronoSpot: CaptureSpot | null = null;
-  let homeScoreSpot: CaptureSpot | null = null;
-  let awayScoreSpot: CaptureSpot | null = null;
-  let matchCodeSpot: CaptureSpot | null = null;
-  let homeHintSpot: CheckSpot | null = null;
+  let chronoSpot: DataCaptureSpot | null = null;
+  let chronoStartedSpot: ColorCheckSpot | null = null;
+  let homeScoreSpot: DataCaptureSpot | null = null;
+  let awayScoreSpot: DataCaptureSpot | null = null;
+  let matchCodeSpot: DataCaptureSpot | null = null;
+  let homeHintSpot: ColorCheckSpot | null = null;
+  let homeIsLeft: boolean;
 
   video.onloadedmetadata = () => {
     video.play();
 
-    const sub = defer(async () => {
+    const check = defer(async () => {
 
-      if (
-        video.videoWidth !== width || video.videoHeight !== height
-        || !chronoSpot || !matchCodeSpot
-        || !homeScoreSpot || !awayScoreSpot
-        || !homeHintSpot?.check()
-      ) {
-
+      // Reset all spots on window resized
+      if (video.videoWidth !== width || video.videoHeight !== height) {
         width = video.videoWidth;
         height = video.videoHeight;
         console.debug(`Window size: ${width} x ${height}`);
+        chronoSpot = matchCodeSpot = homeScoreSpot = awayScoreSpot = homeHintSpot = null;
+      }
 
-        // Init spots
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = 150;
-        const ctx = canvas.getContext("2d", { willReadFrequently: true });
-        if (!ctx) throw new Error("Invalid context");
-        ctx.drawImage(video, 0, 0);
+      const withInitContext = (() => {
+        let initCtx: InitContext | undefined;
+        return (callback: (ctx: InitContext) => void) => {
+          if (!initCtx) {
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = 150;
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            if (!ctx) throw new Error("Invalid context");
+            ctx.drawImage(video, 0, 0);
+            const topBarHeight = findColorVert(ctx, appBackgroundColor);
+            console.log("Top bar height: " + topBarHeight);
+            initCtx = { context: ctx, topBarHeight };
+          }
+          callback(initCtx);
+        }
+      })();
 
-        // Top bar offset
-        const topBarHeight = getTopBarHeight(ctx);
-        console.log("Top bar height: " + topBarHeight);
+      if (!chronoSpot) {
+        withInitContext(ctx => {
+          const chronoRect = findColorRect(ctx, chronoBackgroundColor, 0, 1 / 3);
+          console.debug(`Chrono rect: ${JSON.stringify(chronoRect)}`);
+          chronoSpot = chronoRect ? new DataCaptureSpot(video, chronoRect) : null;
+        });
+      }
 
-        const homeHintPoint = findColorPoint(ctx, {
-          x: 0,
-          y: topBarHeight,
-          width: width,
-          height: canvas.height - topBarHeight
-        }, [ 0xc0, 0xff, 0xff ]);
-        console.debug(`Home hint point: ${JSON.stringify(homeHintPoint)}`);
-        homeHintSpot = homeHintPoint ? new CheckSpot(video, homeHintPoint, [ 0xc0, 0xff, 0xff ]) : null;
-        const homeIsLeft = (homeHintPoint?.x ?? 0) < width / 2;
+      if (!chronoStartedSpot) {
+        withInitContext((ctx) => {
+          const chronoButtonPoint = findColorPoint(ctx, chronoStartColor, 1 / 4, 1 / 4) ?? findColorPoint(ctx, chronoStopColor, 1 / 4, 1 / 4);
+          console.debug(`Chrono button point: ${JSON.stringify(chronoButtonPoint)}`);
+          chronoStartedSpot = chronoButtonPoint ? new ColorCheckSpot(video, chronoButtonPoint) : null;
+        })
+      }
 
-        const chronoRect = findColorRect(ctx, {
-          x: 0,
-          y: topBarHeight,
-          width: Math.round(width / 3),
-          height: canvas.height - topBarHeight
-        }, [ 0xff, 0xff, 0xff ]);
-        console.debug(`Chrono rect: ${JSON.stringify(chronoRect)}`);
-        chronoSpot = chronoRect ? new CaptureSpot(video, chronoRect) : null;
+      if (!homeHintSpot?.matchColor(homeTeamBackgroundColor)) {
+        withInitContext(ctx => {
+          const homeHintPoint = findColorPoint(ctx, homeTeamBackgroundColor, 0, 1);
+          console.debug(`Home hint point: ${JSON.stringify(homeHintPoint)}`);
+          homeHintSpot = homeHintPoint ? new ColorCheckSpot(video, homeHintPoint) : null;
+          homeIsLeft = (homeHintPoint?.x ?? 0) < width / 2;
+        });
+      }
 
-        const leftScoreRect = findColorRect(ctx, {
-          x: Math.round(width / 3),
-          y: topBarHeight,
-          width: Math.round(width / 6),
-          height: canvas.height - topBarHeight
-        }, [ 0xff, 0xff, 0xff ]);
-        console.debug(`Left score rect: ${JSON.stringify(leftScoreRect)}`);
-        const leftScoreSpot = leftScoreRect ? new CaptureSpot(video, leftScoreRect) : null;
+      if (!homeScoreSpot || !awayScoreSpot) {
+        withInitContext(ctx => {
+          const leftScoreRect = findColorRect(ctx, scoreBackgroundColor, 1 / 3, 1 / 6);
+          console.debug(`Left score rect: ${JSON.stringify(leftScoreRect)}`);
+          const leftScoreSpot = leftScoreRect ? new DataCaptureSpot(video, leftScoreRect) : null;
+          const rightScoreRect = findColorRect(ctx, scoreBackgroundColor, 1 / 2, 1 / 6);
+          console.debug(`Right score rect: ${JSON.stringify(rightScoreRect)}`);
+          const rightScoreSpot = rightScoreRect ? new DataCaptureSpot(video, rightScoreRect) : null;
+          homeScoreSpot = homeIsLeft ? leftScoreSpot : rightScoreSpot;
+          awayScoreSpot = homeIsLeft ? rightScoreSpot : leftScoreSpot;
+        });
+      }
 
-        const rightScoreRect = findColorRect(ctx, {
-          x: Math.round(width / 2),
-          y: topBarHeight,
-          width: Math.round(width / 6),
-          height: canvas.height - topBarHeight
-        }, [ 0xff, 0xff, 0xff ]);
-        console.debug(`Right score rect: ${JSON.stringify(rightScoreRect)}`);
-        const rightScoreSpot = rightScoreRect ? new CaptureSpot(video, rightScoreRect) : null;
-
-        homeScoreSpot = homeIsLeft ? leftScoreSpot : rightScoreSpot;
-        awayScoreSpot = homeIsLeft ? rightScoreSpot : leftScoreSpot;
-
-        const matchCodeRect = findColorRect(ctx, {
-          x: Math.round(width * 0.75),
-          y: topBarHeight,
-          width: Math.round(width * 0.25),
-          height: canvas.height - topBarHeight
-        }, [ 0xff, 0xc0, 0xff ]);
-        console.debug(`Match code rect: ${JSON.stringify(matchCodeRect)}`);
-        matchCodeSpot = matchCodeRect ? new CaptureSpot(video, matchCodeRect) : null;
-
+      if (!matchCodeSpot) {
+        withInitContext(ctx => {
+          const matchCodeRect = findColorRect(ctx, matchCodeBackgroundColor, 3 / 4, 1 / 4);
+          console.debug(`Match code rect: ${JSON.stringify(matchCodeRect)}`);
+          matchCodeSpot = matchCodeRect ? new DataCaptureSpot(video, matchCodeRect) : null;
+        });
       }
 
       return {
-        chrono: chronoSpot?.checkData() ?? undefined,
-        homeScore: homeScoreSpot?.checkData() ?? undefined,
-        awayScore: awayScoreSpot?.checkData() ?? undefined,
-        matchCode: matchCodeSpot?.checkData() ?? undefined
+        chrono: chronoSpot?.peekNewData() ?? undefined,
+        chronoStarted: chronoStartedSpot?.matchColor(chronoStopColor),
+        homeScore: homeScoreSpot?.peekNewData() ?? undefined,
+        awayScore: awayScoreSpot?.peekNewData() ?? undefined,
+        matchCode: matchCodeSpot?.peekNewData() ?? undefined
       } as CaptureData;
-    }).pipe(
-      repeat({ delay: 2000 })
+
+    });
+    
+    const sub = timer(initialWindowDelayMs).pipe(
+      switchMap(() => check.pipe(repeat({ delay: checkDelayMs })))
     ).subscribe({
       next: (dataUrl) => {
         //console.debug("Capture data: " + JSON.stringify(dataUrl, undefined, 2));
@@ -125,12 +141,12 @@ window.addEventListener("DOMContentLoaded", async () => {
         }
       }
     });
-  
+
     track.addEventListener("ended", () => {
       console.debug("Capture track ended");
       sub.unsubscribe();
     });
-  
+
   };
   video.srcObject = stream;
   document.body.append(video);
@@ -139,6 +155,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
 export type CaptureData = Partial<Readonly<{
   chrono: string;
+  chronoStarted: boolean;
   homeScore: string;
   awayScore: string;
   matchCode: string;
@@ -164,11 +181,11 @@ abstract class Spot {
 
 }
 
-class CaptureSpot extends Spot {
+class DataCaptureSpot extends Spot {
 
   private contentUrl: string | null = null;
 
-  checkData(): string | null {
+  peekNewData(): string | null {
     this.drawSource();
     const url = this.canvas.toDataURL();
     if (url == this.contentUrl) return null;
@@ -178,24 +195,24 @@ class CaptureSpot extends Spot {
 
 }
 
-class CheckSpot extends Spot {
+class ColorCheckSpot extends Spot {
 
-  constructor(source: CanvasImageSource, point: Point, private readonly color: [ number, number, number ]) {
-    super(source, { x: point.x, y: point.y, width: 1, height: 1});
+  constructor(source: CanvasImageSource, point: Point) {
+    super(source, { x: point.x, y: point.y, width: 1, height: 1 });
   }
 
-  check(): boolean {
+  matchColor(color: number): boolean {
     this.drawSource();
     const data = this.context?.getImageData(0, 0, 1, 1);
-    return !!data && matchColor(data, 0, this.color);
+    return !!data && matchColor(data, 0, color);
   }
 
 }
 
-function getTopBarHeight(ctx: CanvasRenderingContext2D): number {
+function findColorVert(ctx: CanvasRenderingContext2D, color: number): number {
   const data = ctx.getImageData(5, 0, 1, 100);
   for (let i = 0; i < data.data.length; i += 4) {
-    if (matchColor(data, i, [ 0xf0, 0xf0, 0xf0 ])) return i / 4;
+    if (matchColor(data, i, color)) return i / 4;
   }
   return 0;
 }
@@ -204,17 +221,25 @@ function toPoint(data: ImageData, i: number): Point {
   return { x: (i / 4) % data.width, y: Math.floor(i / 4 / data.width) };
 }
 
-function matchColor(data: ImageData, i: number, color: [ number, number, number ]): boolean {
-  return color.every((c, o) => Math.abs(data.data[i + o] - c) < 5);
+function matchColor(data: ImageData, i: number, color: number): boolean {
+  return [(color >> 0x10) & 0xff, (color >> 0x8) & 0xff, color & 0xff]
+    .every((c, o) => Math.abs(data.data[i + o] - c) < 5);
 }
 
 function findColorRect(
-  ctx: CanvasRenderingContext2D,
-  rect: Rectangle,
-  color: [ number, number, number ],
+  ctx: InitContext,
+  color: number,
+  xMinRatio: number,
+  widthRatio: number,
   minSize = 10
 ): Rectangle | null {
-  const data = ctx.getImageData(rect.x, rect.y, rect.width, rect.height);
+  const rect = {
+    x: Math.round(ctx.context.canvas.width * xMinRatio),
+    y: ctx.topBarHeight,
+    width: Math.round(ctx.context.canvas.width * widthRatio),
+    height: ctx.context.canvas.height - ctx.topBarHeight
+  }
+  const data = ctx.context.getImageData(rect.x, rect.y, rect.width, rect.height);
   const d = data.data;
   for (let i = 0; i < d.length; i += 4) {
     if (!matchColor(data, i, color)) continue;
@@ -240,11 +265,18 @@ function findColorRect(
 }
 
 function findColorPoint(
-  ctx: CanvasRenderingContext2D,
-  rect: Rectangle,
-  color: [ number, number, number ]
+  ctx: InitContext,
+  color: number,
+  xMinRatio: number,
+  widthRatio: number
 ): Point | null {
-  const data = ctx.getImageData(rect.x, rect.y, rect.width, rect.height);
+  const rect = {
+    x: Math.round(ctx.context.canvas.width * xMinRatio),
+    y: ctx.topBarHeight,
+    width: Math.round(ctx.context.canvas.width * widthRatio),
+    height: ctx.context.canvas.height - ctx.topBarHeight
+  }
+  const data = ctx.context.getImageData(rect.x, rect.y, rect.width, rect.height);
   const d = data.data;
   for (let i = 0; i < d.length; i += 4) {
     if (!matchColor(data, i, color)) continue;

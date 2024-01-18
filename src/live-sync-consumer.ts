@@ -3,7 +3,7 @@ import { CustomProvider, initializeAppCheck } from "firebase/app-check";
 import { DocumentReference, FieldValue, collection, doc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore/lite";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { MatchUpdate } from "./main";
-import { Observable, Subscription, mergeMap, throttleTime } from "rxjs";
+import { Observable, Subscription, mergeMap, retry, throttleTime } from "rxjs";
 
 type AppCheckTokenRequest = Readonly<{ appId: string; }>
 type AppCheckToken = Readonly<{ token: string, expiresInMillis: number }>;
@@ -54,7 +54,7 @@ export class LiveSyncConsumer {
   subscribe(updates: Observable<Partial<MatchUpdate>>): Subscription {
     let firebaseDoc: DocumentReference | undefined;
     return updates.pipe(
-      throttleTime(30000),
+      throttleTime(15000, undefined, { leading: true, trailing: true }),
       mergeMap(async (update: Partial<MatchUpdate>) => {
         if (!update.matchCode) return;
         try {
@@ -71,7 +71,8 @@ export class LiveSyncConsumer {
         } catch (error) {
           console.log("Failed to send update: " + error);
         }
-      })
+      }),
+      retry({ delay: 30000 })
     ).subscribe();
   }
 
