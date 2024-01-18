@@ -116,7 +116,7 @@ window.addEventListener("DOMContentLoaded", async () => {
         matchCode: matchCodeSpot?.checkData() ?? undefined
       } as CaptureData;
     }).pipe(
-      repeat({ delay: 5000 })
+      repeat({ delay: 2000 })
     ).subscribe({
       next: (dataUrl) => {
         //console.debug("Capture data: " + JSON.stringify(dataUrl, undefined, 2));
