@@ -1,12 +1,14 @@
 import { BrowserWindow, desktopCapturer, ipcMain } from "electron";
 import * as path from "path";
-import { Observable, defer, distinctUntilChanged, map, mergeMap, merge as mergeObservables, pairwise, repeat, share, startWith, switchScan, tap } from "rxjs";
+import { EMPTY, Observable, defer, distinctUntilChanged, map, mergeMap, pairwise, repeat, share, startWith, switchMap, tap } from "rxjs";
 import * as tesseract from "tesseract.js";
 import { CaptureData } from "./fdme-capture";
 import { MatchUpdate } from "./main";
 import { isEqual, merge } from "lodash";
 
 export class FDMEProvider {
+
+  private readonly windowScanDelayMs = 5000;
 
   private ocrMatcher: (data: Partial<CaptureData>) => Promise<Partial<MatchUpdate>>;
 
@@ -91,28 +93,15 @@ export class FDMEProvider {
     );
   }
 
-  observeUpdates(): Observable<Partial<MatchUpdate>> {
+  observeUpdates(): Observable<Partial<MatchUpdate> | null> {
     return defer(async () => {
-      if (this.testMode) return ["@test"];
-      const allSources = await desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } });
-      return allSources.filter(w => w.name == "Feuille de Table").map(w => w.id);
+      if (this.testMode) return "@test";
+      const sources = await desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } });
+      return sources.filter(w => w.name == "Feuille de Table").at(0)?.id ?? null;
     }).pipe(
-      repeat({ delay: 5000 }),
-      switchScan((obs, sourceIds) => {
-        // Create hidden capture window for new sources
-        for (const sourceId of sourceIds) {
-          if (obs.has(sourceId)) continue;
-          console.debug(`Creating capture window for '${sourceId}'`);
-          obs.set(sourceId, this.observeWindowUpdates(sourceId));
-        }
-        // Delete capture window for unavailable sources
-        for (const sourceId of obs.keys()) {
-          if (sourceIds.includes(sourceId)) continue;
-          console.debug(`Closing capture window for '${sourceId}'`);
-          obs.delete(sourceId);
-        }
-        return mergeObservables(...obs.values());
-      }, new Map<string, Observable<Partial<MatchUpdate>>>()),
+      repeat({ delay: this.windowScanDelayMs }),
+      distinctUntilChanged(),
+      switchMap(sourceId => (sourceId ? this.observeWindowUpdates(sourceId) : EMPTY).pipe(startWith(null))),
       share()
     );
   }
