@@ -2,7 +2,7 @@ import { Menu, Tray, app } from "electron";
 import * as log from "electron-log/main";
 import { merge } from "lodash";
 import * as path from "path";
-import { Subscription, merge as mergeObservables, scan } from "rxjs";
+import { Subscription, combineLatest, scan, startWith, tap } from "rxjs";
 import { FDMEProvider } from "./fdme-provider";
 import { LiveSyncConsumer } from "./live-sync-consumer";
 import { ScorepadProvider } from "./scorepad-provider";
@@ -31,18 +31,20 @@ app.whenReady().then(() => {
   appTray.setContextMenu(contextMenu);
 
   // Process updates
-  const updates = mergeObservables(
-    new FDMEProvider(testMode).observeUpdates(),
-    new ScorepadProvider().observeUpdates()
-  ).pipe(
-    scan((state, update) => {
-      if (update == null) return {};
-      else return merge(state, update);
-    }, {} as Partial<MatchUpdate>)
-  );
+  const fdmeUpdates = new FDMEProvider(testMode).observeUpdates();
+  const scorepadUpdates = new ScorepadProvider(testMode).observeUpdates();
+  const updates = combineLatest([ fdmeUpdates, scorepadUpdates.pipe(startWith(null)) ])
+    .pipe(
+      scan((state, [ fdmeUpdate, scorepadUpdate ]) => {
+        if (fdmeUpdate == null) return {};
+        else return merge(state, fdmeUpdate, scorepadUpdate);
+      }, {} as Partial<MatchUpdate>),
+      tap(u => { if (testMode) console.debug(`Combined update: ${JSON.stringify(u)}`); }),
+    );
+
   updatesSub = new Subscription();
   updatesSub.add(new LiveSyncConsumer().subscribe(updates));
-  updatesSub.add(new LocalBroadcastConsumer("192.168.0.1").subscribe(updates));
+  updatesSub.add(new LocalBroadcastConsumer("192.168.0.1", testMode).subscribe(updates));
   
 });
 
@@ -59,5 +61,7 @@ export type MatchUpdate = {
   matchCode: string,
   homeScore: number,
   awayScore: number,
-  chrono: number
+  chrono: number,
+  period: number,
+  chronoStarted: boolean
 };

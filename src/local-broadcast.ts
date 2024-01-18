@@ -1,20 +1,31 @@
-import { Observable, Subscription, mergeMap } from "rxjs";
+import { Observable, Subscription, tap } from "rxjs";
 import { LiveUpdate } from "./data";
+import { BrowserWindow, ipcMain } from "electron";
+import * as path from "path";
 
 export class LocalBroadcastConsumer {
 
-  constructor(private readonly wsHost: string) {}
-
-  private readonly ws = new WebSocket(`ws://${this.wsHost}:7000`);
-  private readonly openedWs = new Promise<WebSocket>((resolve) => {
-    this.ws.onopen = () => resolve(this.ws);
-  });
+  constructor(readonly host: string, readonly testMode: boolean) {
+    const sendWindow = new BrowserWindow({
+      show: false, webPreferences: {
+        offscreen: true,
+        preload: path.join(__dirname, "local-broadcast-ws.js"),
+        nodeIntegration: true
+      }
+    });
+    sendWindow.loadFile("assets/window.html", { query: { host } });
+    if (testMode) {
+      sendWindow.webContents.on("console-message", (_event, _level, message) => {
+        console.debug(message);
+      });
+    }
+  }
 
   subscribe(updates: Observable<Partial<LiveUpdate>>): Subscription {
     return updates.pipe(
-      mergeMap(async (update) => {
-      (await this.openedWs).send(JSON.stringify(update));
-    })).subscribe();
+      tap((update) => {
+        ipcMain.emit("match-update", update);
+      })).subscribe();
   }
 
 }
