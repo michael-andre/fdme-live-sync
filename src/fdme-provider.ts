@@ -12,7 +12,7 @@ export class FDMEProvider {
 
   private ocrMatcher: (data: Partial<CaptureData>) => Promise<Partial<MatchUpdate>>;
 
-  constructor(private testMode: boolean) {
+  constructor(private testMode: boolean, private isDev: boolean) {
     const chronoMatcher = this.createOcrMatcher("numerical", "0123456789:-", /^(\d+):(\d+)$/, p => {
       const min = Number(p[1]);
       const sec = Number(p[2]);
@@ -51,7 +51,10 @@ export class FDMEProvider {
       try {
         const text = (await (await scheduler).addJob("recognize", input)).data.text.trim();
         const match = text.match(regex);
-        if (!match) console.warn(`Unrecognized data: '${text}' (against ${regex})`);
+        if (!match) {
+          console.warn(`Unrecognized data: '${text}' (against ${regex})`);
+          console.warn(`Data was: ${input}`);
+        }
         return match ? map(match) : undefined;
       } catch (error) {
         console.error("OCR error: " + error);
@@ -72,7 +75,7 @@ export class FDMEProvider {
       });
       const dataListener = (_: unknown, data: CaptureData) => sub.next(data);
       captureWindow.loadFile("assets/window.html", { hash: sourceId });
-      if (this.testMode) {
+      if (this.isDev) {
         captureWindow.webContents.on("console-message", (_event, _level, message) => {
           console.debug(message);
         });
@@ -86,7 +89,7 @@ export class FDMEProvider {
       switchMap((dataUrl: CaptureData) => this.ocrMatcher(dataUrl)),
       scan((state, update) => merge(state, update), {} as Partial<MatchUpdate>),
       distinctUntilChanged(isEqual),
-      tap(u => { if (this.testMode) console.debug(`FDME update: ${JSON.stringify(u)}`); }),
+      tap(u => { if (this.isDev) console.debug(`FDME update: ${JSON.stringify(u)}`); }),
       share()
     );
   }
