@@ -7,7 +7,7 @@ export class ScorepadProvider {
 
   constructor(private isDev: boolean) {}
 
-  observeUpdates(): Observable<Partial<MatchUpdate>> {
+  observeUpdates(): Observable<MatchUpdate> {
     return new Observable<net.Socket>(sub => {
       const server = net.createServer();
       server.listen(4001, "127.0.0.1", () => {
@@ -33,8 +33,8 @@ export class ScorepadProvider {
       map(frame => {
         return this.processMessage(frame);
       }),
-      filter((update): update is Partial<MatchUpdate> => update != null),
-      scan((state, update) => merge(state, update), {} as Partial<MatchUpdate>),
+      filter((update): update is MatchUpdate => update != null),
+      scan((state, update) => merge({}, state, update), {} as MatchUpdate),
       distinctUntilChanged(isEqual),
       tap(u => { if (this.isDev) console.debug(`Scorepad update: ${JSON.stringify(u)}`); }),
       share()
@@ -42,7 +42,7 @@ export class ScorepadProvider {
   }
 
   // https://static.bodet-sport.com/images/stories/EN/support/Pdfs/manuals/Scorepad/608264-Network%20output%20and%20protocols-Scorepad.pdf
-  private processMessage(frame: Buffer): Partial<MatchUpdate> | null {
+  private processMessage(frame: Buffer): MatchUpdate | null {
     const msg = frame.subarray(4, -2);
     if (msg[0] == 0x30 && msg[1] == 0x31 && msg[3] == 0x34) {
       const clockStatus = msg[2];

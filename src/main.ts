@@ -1,12 +1,11 @@
 import { Menu, Tray, app } from "electron";
-import * as log from "electron-log/main";
-import { merge } from "lodash";
+import log from "electron-log/main";
 import * as path from "path";
-import { Subscription, combineLatest, scan, startWith, tap } from "rxjs";
+import { Subscription } from "rxjs";
 import { FDMEProvider } from "./fdme-provider";
 import { LiveSyncConsumer } from "./live-sync-consumer";
 import { ScorepadProvider } from "./scorepad-provider";
-import { LocalBroadcastConsumer } from "./local-broadcast";
+import { observeActiveMatchCode } from "./match-code";
 
 export type AppCheckTokenRequest = Readonly<{ appId: string; }>
 export type AppCheckToken = Readonly<{ token: string, expiresInMillis: number }>;
@@ -35,18 +34,11 @@ app.whenReady().then(() => {
   // Process updates
   const fdmeUpdates = new FDMEProvider(testMode, isDev).observeUpdates();
   const scorepadUpdates = new ScorepadProvider(isDev).observeUpdates();
-  const updates = combineLatest([ fdmeUpdates, scorepadUpdates.pipe(startWith(null)) ])
-    .pipe(
-      scan((state, [ fdmeUpdate, scorepadUpdate ]) => {
-        if (fdmeUpdate == null) return {};
-        else return merge(state, fdmeUpdate, scorepadUpdate);
-      }, {} as Partial<MatchUpdate>),
-      tap(u => { if (isDev) console.debug(`Combined update: ${JSON.stringify(u)}`); }),
-    );
+  const matchCode = observeActiveMatchCode();
 
   updatesSub = new Subscription();
-  updatesSub.add(new LiveSyncConsumer().subscribe(updates));
-  updatesSub.add(new LocalBroadcastConsumer("192.168.0.1", isDev).subscribe(updates));
+  updatesSub.add(new LiveSyncConsumer().subscribe(fdmeUpdates, scorepadUpdates, matchCode));
+  //updatesSub.add(new LocalBroadcastConsumer("192.168.0.1", isDev).subscribe(updates));
   
 });
 
@@ -59,11 +51,10 @@ app.on("window-all-closed", () => {
   app.dock?.hide();
 });
 
-export type MatchUpdate = {
-  matchCode: string,
+export type MatchUpdate = Partial<{
   homeScore: number,
   awayScore: number,
   chrono: number,
   period: number,
   chronoStarted: boolean
-};
+}>;
