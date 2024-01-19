@@ -5,7 +5,7 @@ import { isEqual, merge } from "lodash";
 
 export class ScorepadProvider {
 
-  constructor(private testMode: boolean) {}
+  constructor(private isDev: boolean) {}
 
   observeUpdates(): Observable<Partial<MatchUpdate>> {
     return new Observable<net.Socket>(sub => {
@@ -36,7 +36,7 @@ export class ScorepadProvider {
       filter((update): update is Partial<MatchUpdate> => update != null),
       scan((state, update) => merge(state, update), {} as Partial<MatchUpdate>),
       distinctUntilChanged(isEqual),
-      tap(u => { if (this.testMode) console.debug(`Scorepad update: ${JSON.stringify(u)}`); }),
+      tap(u => { if (this.isDev) console.debug(`Scorepad update: ${JSON.stringify(u)}`); }),
       share()
     )
   }

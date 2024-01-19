@@ -5,7 +5,7 @@ import * as path from "path";
 
 export class LocalBroadcastConsumer {
 
-  constructor(readonly host: string, readonly testMode: boolean) {
+  constructor(readonly host: string, readonly isDev: boolean) {
     const sendWindow = new BrowserWindow({
       show: false, webPreferences: {
         offscreen: true,
@@ -14,7 +14,7 @@ export class LocalBroadcastConsumer {
       }
     });
     sendWindow.loadFile("assets/window.html", { query: { host } });
-    if (testMode) {
+    if (isDev) {
       sendWindow.webContents.on("console-message", (_event, _level, message) => {
         console.debug(message);
       });
