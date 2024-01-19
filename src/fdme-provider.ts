@@ -1,40 +1,39 @@
 import { BrowserWindow, desktopCapturer, ipcMain } from "electron";
+import { isEqual, merge } from "lodash";
 import * as path from "path";
-import { EMPTY, Observable, defer, distinctUntilChanged, repeat, scan, share, startWith, switchMap, tap } from "rxjs";
+import { EMPTY, Observable, defer, distinctUntilChanged, repeat, scan, share, switchMap, tap } from "rxjs";
 import * as tesseract from "tesseract.js";
 import { CaptureData } from "./fdme-capture";
 import { MatchUpdate } from "./main";
-import { isEqual, merge } from "lodash";
+import { exhaustMapLatest } from "./rx-utils";
 
 export class FDMEProvider {
 
   private readonly windowScanDelayMs = 5000;
 
-  private ocrMatcher: (data: Partial<CaptureData>) => Promise<Partial<MatchUpdate>>;
+  private ocrMatcher: (data: Partial<CaptureData>) => Promise<MatchUpdate>;
 
   constructor(private testMode: boolean, private isDev: boolean) {
-    const chronoMatcher = this.createOcrMatcher("numerical", "0123456789:-", /^(\d+):(\d+)$/, p => {
+    const chronoMatcher = this.createOcrMatcher("0123456789:-", /^(\d+):(\d+)$/, p => {
       const min = Number(p[1]);
       const sec = Number(p[2]);
       return min >= 0 && sec >= 0 ? min * 60 + sec : undefined;
     });
-    const scoreMatcher = this.createOcrMatcher("numerical", "0123456789", /^(\d+)$/, p => Number(p[1]));
-    const codeMatcher = this.createOcrMatcher("match-code", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", testMode ? /^(FTESTXX)$/ : /^([A-Z]{7})$/, p => p[1]);
+    const scoreMatcher = this.createOcrMatcher("0123456789", /^(\d+)$/, p => Number(p[1]));
 
     this.ocrMatcher = async (captureData) => {
-      const [matchCode, chrono, homeScore, awayScore] = await Promise.all([
-        codeMatcher(captureData.matchCode),
+      const [chrono, homeScore, awayScore] = await Promise.all([
         chronoMatcher(captureData.chrono),
         scoreMatcher(captureData.homeScore),
         scoreMatcher(captureData.awayScore)
       ]);
-      return { matchCode, chrono, homeScore, awayScore, chronoStarted: captureData.chronoStarted } as Partial<MatchUpdate>;
+      return { chrono, homeScore, awayScore, chronoStarted: captureData.chronoStarted } as MatchUpdate;
     };
   }
 
-  private createOcrMatcher<T>(dataPath: "match-code" | "numerical", whiteList: string, regex: RegExp, map: (match: RegExpMatchArray) => T) {
+  private createOcrMatcher<T>(whiteList: string, regex: RegExp, map: (match: RegExpMatchArray) => T) {
     const scheduler = tesseract.createWorker("eng", tesseract.OEM.TESSERACT_ONLY, {
-      langPath: path.join(__dirname, "..", "assets", "ocr-data/" + dataPath),
+      langPath: path.join(__dirname, "..", "assets", "ocr-data"),
       cacheMethod: "none",
       gzip: false
     }).then(async worker => {
@@ -53,7 +52,7 @@ export class FDMEProvider {
         const match = text.match(regex);
         if (!match) {
           console.warn(`Unrecognized data: '${text}' (against ${regex})`);
-          console.warn(`Data was: ${input}`);
+          //if (this.isDev) console.warn(`Data was: ${input}`);
         }
         return match ? map(match) : undefined;
       } catch (error) {
@@ -63,11 +62,12 @@ export class FDMEProvider {
     };
   }
 
-  private observeWindowUpdates(sourceId: string): Observable<Partial<MatchUpdate>> {
+  private observeWindowUpdates(sourceId: string): Observable<MatchUpdate> {
     return new Observable<Partial<CaptureData>>((sub) => {
       console.debug(`Creating capture window for '${sourceId}'`);
       const captureWindow = new BrowserWindow({
-        show: false, webPreferences: {
+        show: false,
+        webPreferences: {
           offscreen: true,
           preload: path.join(__dirname, "fdme-capture.js"),
           nodeIntegration: true
@@ -86,15 +86,15 @@ export class FDMEProvider {
         captureWindow.close();
       };
     }).pipe(
-      switchMap((dataUrl: CaptureData) => this.ocrMatcher(dataUrl)),
-      scan((state, update) => merge(state, update), {} as Partial<MatchUpdate>),
+      exhaustMapLatest((captureData: CaptureData) => this.ocrMatcher(captureData)),
+      scan((state, update) => merge({}, state, update), {} as MatchUpdate),
       distinctUntilChanged(isEqual),
       tap(u => { if (this.isDev) console.debug(`FDME update: ${JSON.stringify(u)}`); }),
       share()
     );
   }
 
-  observeUpdates(): Observable<Partial<MatchUpdate> | null> {
+  observeUpdates(): Observable<MatchUpdate | null> {
     return defer(async () => {
       if (this.testMode) return "@test";
       const sources = await desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } });
@@ -102,7 +102,10 @@ export class FDMEProvider {
     }).pipe(
       repeat({ delay: this.windowScanDelayMs }),
       distinctUntilChanged(),
-      switchMap(sourceId => (sourceId ? this.observeWindowUpdates(sourceId) : EMPTY).pipe(startWith(null))),
+      switchMap(sourceId => {
+        if (this.isDev) console.debug(`FDME window: ${sourceId}`);
+        return sourceId ? this.observeWindowUpdates(sourceId) : EMPTY;
+      }),
       share()
     );
   }

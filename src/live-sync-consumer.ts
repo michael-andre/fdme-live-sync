@@ -1,9 +1,10 @@
 import { FirebaseApp, initializeApp } from "firebase/app";
 import { CustomProvider, initializeAppCheck } from "firebase/app-check";
-import { DocumentReference, FieldValue, collection, doc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore/lite";
+import { FieldValue, collection, doc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore/lite";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { MatchUpdate } from "./main";
-import { Observable, Subscription, mergeMap, retry, throttleTime } from "rxjs";
+import { EMPTY, Observable, Subscription, combineLatest, mergeMap, retry, scan, startWith, switchMap, throttleTime } from "rxjs";
+import { merge } from "lodash";
 
 type AppCheckTokenRequest = Readonly<{ appId: string; }>
 type AppCheckToken = Readonly<{ token: string, expiresInMillis: number }>;
@@ -49,37 +50,47 @@ export class LiveSyncConsumer {
     return app;
   }
 
-  private readonly liveUpdates = collection(LiveSyncConsumer.firestore, "liveUpdates");
-
-  subscribe(updates: Observable<Partial<MatchUpdate>>): Subscription {
-    let firebaseDoc: DocumentReference | undefined;
-    return updates.pipe(
-      throttleTime(15000, undefined, { leading: true, trailing: true }),
-      mergeMap(async (update: Partial<MatchUpdate>) => {
-        if (!update.matchCode) return;
-        try {
-          firebaseDoc = firebaseDoc ?? doc(this.liveUpdates, update.matchCode);
-          const liveUpdate: LiveUpdate = {
-            chrono: update.chrono ?? null,
-            score: update?.homeScore != undefined && update?.awayScore != undefined
-              ? [update.homeScore, update.awayScore]
-              : null,
-            timestamp: serverTimestamp()
-          }
-          console.debug(`Server update: ${JSON.stringify(liveUpdate)}`);
-          await setDoc(firebaseDoc, liveUpdate);
-        } catch (error) {
-          console.log("Failed to send update: " + error);
-        }
-      }),
-      retry({ delay: 30000 })
+  subscribe(
+    fdmeUpdates: Observable<MatchUpdate | null>,
+    scorepadUpdates: Observable<MatchUpdate>,
+    matchCode: Observable<string | null>
+  ): Subscription {
+    return matchCode.pipe(
+      switchMap(code => {
+        if (code == null) return EMPTY;
+        const firebaseDoc = doc(collection(LiveSyncConsumer.firestore, "liveUpdates"), code);
+        return combineLatest([fdmeUpdates, scorepadUpdates.pipe(startWith(null))])
+          .pipe(
+            scan((state, [fdmeUpdate, scorepadUpdate]) => {
+              if (fdmeUpdate == null) return {};
+              else return merge({}, state, fdmeUpdate, scorepadUpdate);
+            }, {} as MatchUpdate),
+            throttleTime(15000, undefined, { leading: true, trailing: true }),
+            mergeMap(async (update: MatchUpdate) => {
+              try {
+                const liveUpdate: LiveUpdate = {
+                  chrono: update.chrono ?? null,
+                  score: update?.homeScore != undefined && update?.awayScore != undefined
+                    ? [update.homeScore, update.awayScore]
+                    : null,
+                  timestamp: serverTimestamp()
+                }
+                console.debug(`Server update for ${code}: ${JSON.stringify(liveUpdate)}`);
+                await setDoc(firebaseDoc, liveUpdate);
+              } catch (error) {
+                console.log("Failed to send update: " + error);
+              }
+            }),
+            retry({ delay: 30000 })
+          );
+      })
     ).subscribe();
   }
 
 }
 
 interface LiveUpdate {
-  readonly score: [ number, number ] | null;
+  readonly score: [number, number] | null;
   readonly chrono: number | null;
   readonly timestamp: FieldValue;
 }
