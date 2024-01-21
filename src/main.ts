@@ -6,6 +6,7 @@ import { FDMEProvider } from "./fdme-provider";
 import { LiveSyncConsumer } from "./live-sync-consumer";
 import { ScorepadProvider } from "./scorepad-provider";
 import { observeActiveMatchCode } from "./match-code";
+import { LocalBroadcastConsumer } from "./local-broadcast";
 
 export type AppCheckTokenRequest = Readonly<{ appId: string; }>
 export type AppCheckToken = Readonly<{ token: string, expiresInMillis: number }>;
@@ -38,7 +39,7 @@ app.whenReady().then(() => {
 
   updatesSub = new Subscription();
   updatesSub.add(new LiveSyncConsumer().subscribe(fdmeUpdates, scorepadUpdates, matchCode));
-  //updatesSub.add(new LocalBroadcastConsumer("192.168.0.1", isDev).subscribe(updates));
+  updatesSub.add(new LocalBroadcastConsumer("192.168.0.200", isDev).subscribe(scorepadUpdates));
   
 });
 

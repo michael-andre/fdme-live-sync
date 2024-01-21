@@ -10,12 +10,15 @@ export class ScorepadProvider {
   observeUpdates(): Observable<MatchUpdate> {
     return new Observable<net.Socket>(sub => {
       const server = net.createServer();
-      server.listen(4001, "127.0.0.1", () => {
+      server.listen(4001, "192.168.0.200", () => {
         console.log("Scorepad server started");
       });
       server.on("connection", (socket) => {
         console.log("Scorepad client connected from " + socket.remoteAddress + ":" + socket.remotePort);
         sub.next(socket);
+      });
+      server.on("error", e => {
+        console.warn("Scorepad server error: " + e);
       });
       return () => {
         server.close(() => console.debug("Scorepad server closed"));
@@ -48,7 +51,7 @@ export class ScorepadProvider {
       const clockStatus = msg[2];
       const isGameClock = ((clockStatus >>> 0) & 0x01) == 0;
       if (!isGameClock) return null;
-      const chronoStarted = ((clockStatus >>> 1) & 0x01) == 1;
+      const chronoStarted = ((clockStatus >>> 1) & 0x01) == 0;
       const min = Number(String.fromCharCode(msg[4])) * 10 + Number(String.fromCharCode(msg[5]));
       const sec = Number(String.fromCharCode(msg[6])) * 10 + Number(String.fromCharCode(msg[7]));
       const chrono = min * 60 + sec;
