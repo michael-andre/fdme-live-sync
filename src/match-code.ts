@@ -27,7 +27,7 @@ async function parseActiveMatchCode(logFile: string): Promise<string | null> {
   const reader = new ReverseReader();
   try {
     await reader.open(logFile);
-    let lines = await reader.read(10);
+    const lines = await reader.read(10);
     const pattern = new RegExp("ouverture feuille table coderenc=([A-Z]{7})");
     for (const line of lines.reverse()) {
       const match = line.match(pattern);
