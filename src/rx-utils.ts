@@ -1,6 +1,6 @@
 import { EMPTY, Observable, ObservableInput, ObservedValueOf, concat, defer, from, mergeMap, tap } from "rxjs";
 
-export function exhaustMapLatest<T, O extends ObservableInput<any>>(
+export function exhaustMapLatest<T, O extends ObservableInput<unknown>>(
   project: (value: T) => O
 ) {
   return (source: Observable<T>) => defer(() => {
