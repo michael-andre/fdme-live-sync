@@ -1,6 +1,6 @@
 {
   "name": "fdme-live-sync",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "A live reporting background app for FDME",
   "main": "dist/main.js",
   "author": "Michaël André",
