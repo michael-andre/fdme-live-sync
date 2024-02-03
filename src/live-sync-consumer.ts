@@ -62,8 +62,14 @@ export class LiveSyncConsumer {
         return combineLatest([fdmeUpdates, scorepadUpdates.pipe(startWith(null))])
           .pipe(
             scan((state, [fdmeUpdate, scorepadUpdate]) => {
-              if (fdmeUpdate == null) return {};
-              else return merge({}, state, fdmeUpdate, scorepadUpdate);
+              if (fdmeUpdate == null) {
+                return {};
+              } else if (state.homeScore && state.awayScore && scorepadUpdate?.awayScore == 0 && scorepadUpdate?.homeScore == 0) {
+                // Prevent accidental reset
+                return state;
+              } else {
+                return merge({}, state, fdmeUpdate, scorepadUpdate);
+              }
             }, {} as MatchUpdate),
             throttleTime(15000, undefined, { leading: true, trailing: true }),
             mergeMap(async (update: MatchUpdate) => {
