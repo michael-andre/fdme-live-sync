@@ -1,5 +1,5 @@
 import * as net from "net";
-import { Observable, distinctUntilChanged, filter, map, mergeMap, scan, share, tap } from "rxjs";
+import { Observable, distinctUntilChanged, filter, map, mergeMap, retry, scan, share, tap } from "rxjs";
 import { MatchUpdate } from "./main";
 import { isEqual, merge } from "lodash";
 
@@ -19,20 +19,32 @@ export class ScorepadProvider {
       });
       server.on("error", e => {
         console.warn("Scorepad server error: " + e);
+        sub.error(e);
       });
       return () => {
-        server.close(() => console.debug("Scorepad server closed"));
-        server.unref();
+        try {
+          server.close(() => console.debug("Scorepad server closed"));
+          server.unref();  
+        } catch (e) {
+          console.error("Failed to close server: " + e);
+        }
       };
     }).pipe(
+      retry(),
       mergeMap(socket => new Observable<Buffer>(sub => {
         socket.on("data", (frame) => sub.next(frame));
-        socket.on("close", () => sub.complete())
+        socket.on("close", () => sub.complete());
+        socket.on("error",e => sub.error(e));
         return () => {
-          socket.destroy();
-          socket.unref();
-        };  
+          try {
+            socket.destroy();
+            socket.unref();
+          } catch (e) {
+            console.error("Failed to close socket: " + e);
+          }
+        };
       })),
+      retry(),
       map(frame => {
         return this.processMessage(frame);
       }),
