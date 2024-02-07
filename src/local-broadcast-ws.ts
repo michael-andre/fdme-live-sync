@@ -19,4 +19,9 @@ new Observable((sub) => {
     (await openedWs).send(JSON.stringify(update));
     console.debug("Local broadcast sent: " + JSON.stringify(update));
   })
-).subscribe();
+).subscribe({
+  error: (e) => {
+    console.error("Local broadcast error");
+    console.error(e);
+  }
+});

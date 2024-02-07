@@ -9,7 +9,8 @@
     "build": "tsc",
     "watch": "tsc -w",
     "lint": "eslint --ext .ts ./src",
-    "start": "npm run build && electron . --dev=true",
+    "start": "npm run build && electron .",
+    "start:test": "npm run build && electron . --mode=test",
     "pack": "electron-builder --dir --win",
     "dist": "electron-builder --win"
   },

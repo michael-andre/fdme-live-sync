@@ -5,7 +5,7 @@ import * as path from "path";
 
 export class LocalBroadcastConsumer {
 
-  constructor(readonly host: string, readonly isDev: boolean) {
+  constructor(readonly host: string) {
     const sendWindow = new BrowserWindow({
       show: false, webPreferences: {
         offscreen: true,
@@ -14,18 +14,21 @@ export class LocalBroadcastConsumer {
       }
     });
     sendWindow.loadFile("assets/window.html", { query: { host } });
-    if (isDev) {
-      sendWindow.webContents.on("console-message", (_event, _level, message) => {
-        console.debug(message);
-      });
-    }
+    sendWindow.webContents.on("console-message", (_event, _level, message) => {
+      console.debug(message);
+    });
   }
 
   subscribe(updates: Observable<Partial<LiveUpdate>>): Subscription {
     return updates.pipe(
       tap((update) => {
         ipcMain.emit("match-update", update);
-      })).subscribe();
+      })).subscribe({
+        error: (e) => {
+          console.error("Local boradcast error");
+          console.error(e);
+        }  
+      });
   }
 
 }

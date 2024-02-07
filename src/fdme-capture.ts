@@ -5,7 +5,7 @@ import { Observable, concatMap, defer, repeat, switchMap, timer } from "rxjs";
 const windowResizeDelayMs = 5000;
 const checkDelayMs = 2000;
 const chronoBackgroundColor = 0xffffff;
-const chronoStartColor = 0x008000;
+const chronoStartColor = 0x80ff80;
 const chronoStopColor = 0xff0000;
 const homeTeamBackgroundColor = 0xc0ffff;
 const scoreBackgroundColor = 0xffffff;
@@ -49,6 +49,10 @@ window.addEventListener("DOMContentLoaded", async () => {
         if (dataUrl.chrono || dataUrl.homeScore || dataUrl.awayScore) {
           ipcRenderer.send("capture-data:" + sourceId, dataUrl);
         }
+      },
+      error: (e) => {
+        console.error("FDME capture error");
+        console.error(e);
       }
     });
 
