@@ -64,7 +64,7 @@ export class LiveSyncConsumer {
             scan((state, [fdmeUpdate, scorepadUpdate]) => {
               if (fdmeUpdate == null) {
                 return {};
-              } else if (state.homeScore && state.awayScore && scorepadUpdate?.awayScore == 0 && scorepadUpdate?.homeScore == 0) {
+              } else if (state.homeScore && state.awayScore && state.chrono && scorepadUpdate?.awayScore == 0 && scorepadUpdate?.homeScore == 0) {
                 // Prevent accidental reset
                 return state;
               } else {
@@ -90,7 +90,12 @@ export class LiveSyncConsumer {
             retry({ delay: 30000 })
           );
       })
-    ).subscribe();
+    ).subscribe({
+      error: (e) => {
+        console.error("Live sync consumer error");
+        console.error(e);
+      }
+    });
   }
 
 }

@@ -16,6 +16,19 @@
         "<node_internals>/**"
       ],
       "type": "node"
+    },
+    {
+      "name": "Start (test mode)",
+      "request": "launch",
+      "runtimeArgs": [
+        "run",
+        "start:test"
+      ],
+      "runtimeExecutable": "npm",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "type": "node"
     }
   ]
 }
