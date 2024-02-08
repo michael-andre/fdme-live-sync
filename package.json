@@ -1,7 +1,7 @@
 {
   "name": "fdme-live-sync",
   "version": "0.1.10",
-  "description": "A live reporting background app for FDME",
+  "description": "A background app for live reporting of match chrono & score",
   "main": "dist/main.js",
   "author": "Michaël André",
   "license": "ISC",
@@ -12,7 +12,8 @@
     "start": "npm run build && electron .",
     "start:test": "npm run build && electron . --mode=test",
     "pack": "electron-builder --dir --win",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "release": "electron-builder --win --publish always"
   },
   "dependencies": {
     "electron-log": "^5.1.1",
@@ -46,7 +47,10 @@
       "output": "build"
     },
     "win": {
-      "target": "portable"
+      "target": "portable",
+      "publish": [
+        "github"
+      ]
     }
   }
 }

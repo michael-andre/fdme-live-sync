@@ -7,31 +7,24 @@ on:
 
 jobs:
   release:
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
 
     permissions:
       contents: write
-
-    strategy:
-      matrix:
-        os: [ windows-latest ]
 
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
 
-      - name: Install Node.js, NPM and Yarn
+      - name: Install Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Build/release Electron app
-        uses: x6Pnda/action-electron-compiler@v1.0.1
-        with:
-          # GitHub token, automatically provided to the action
-          # (No need to define this secret in the repo settings)
-          github_token: ${{ secrets.github_token }}
+      - name: Install dependencies
+        run: npm ci
 
-          # If the commit is tagged with a version (e.g. "v1.0.0"),
-          # release the app after building
-          release: true
+      - name: Build and release Electon app
+        run: npm run release
+        env:
+          GITHUB_TOKEN: ${{ secrets.github_token }}
