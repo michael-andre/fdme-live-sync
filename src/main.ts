@@ -5,7 +5,7 @@ import { Subscription } from "rxjs";
 import { observeScoreSheetUpdates } from "./fdme-provider";
 import { LiveSyncConsumer } from "./live-sync-consumer";
 import { LocalBroadcastConsumer } from "./local-broadcast";
-import { observeActiveMatchCode } from "./match-code";
+import { observeFdmeActiveMatchCode } from "./match-code";
 import { observeScorepadUpdates } from "./scorepad-provider";
 
 export type AppCheckTokenRequest = Readonly<{ appId: string; }>
@@ -34,7 +34,7 @@ app.whenReady().then(() => {
     // Process updates
     const fdmeUpdates = observeScoreSheetUpdates(testMode);
     const scorepadUpdates = observeScorepadUpdates();
-    const matchCode = observeActiveMatchCode(testMode);
+    const matchCode = observeFdmeActiveMatchCode(testMode);
   
     updatesSub = new Subscription();
     updatesSub.add(new LiveSyncConsumer().subscribe(fdmeUpdates, scorepadUpdates, matchCode));

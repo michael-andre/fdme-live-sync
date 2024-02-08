@@ -6,16 +6,16 @@ import { exhaustMapLatest } from "./rx-utils";
 
 const errorRetryDelayMs = 5000;
 
-export function observeActiveMatchCode(testMode: boolean): Observable<string | null> {
+export function observeFdmeActiveMatchCode(testMode: boolean): Observable<string | null> {
   if (testMode) {
     return of("FTESTxx");
   }
-  const publicDir = os.platform() == "win32" ? process.env["CSIDL_COMMON_DESKTOPDIRECTORY"] : null;
+  const publicDir = os.platform() == "win32" ? process.env["PUBLIC"] : null;
   if (!publicDir) {
     console.warn("Not running Windows, match code detection disabled");
     return NEVER;
   }
-  const logFilePath = `${publicDir}\\SaisieFeuilleGesthand\\LogFeuille.log`;
+  const logFilePath = `${publicDir}\\Documents\\SaisieFeuilleGesthand\\LogFeuille.log`;
   if (!fs.existsSync(logFilePath)) {
     throw Error("FDME log file not found");
   }
