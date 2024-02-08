@@ -11,9 +11,9 @@
     "lint": "eslint --ext .ts ./src",
     "start": "npm run build && electron .",
     "start:test": "npm run build && electron . --mode=test",
-    "pack": "electron-builder --dir --win",
-    "dist": "electron-builder --win",
-    "release": "electron-builder --win --publish always"
+    "pack": "npm run build && electron-builder --dir --win",
+    "dist": "npm run build && electron-builder --win",
+    "release": "npm run build && electron-builder --win --publish always"
   },
   "dependencies": {
     "electron-log": "^5.1.1",
