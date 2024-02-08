@@ -1,6 +1,6 @@
 {
   "name": "fdme-live-sync",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "A background app for live reporting of match chrono & score",
   "main": "dist/main.js",
   "author": "Michaël André",
