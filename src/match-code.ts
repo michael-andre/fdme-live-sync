@@ -24,10 +24,12 @@ export function observeFdmeActiveMatchCode(testMode: boolean): Observable<string
     distinctUntilChanged(),
     tap(code => console.debug(`Match code: ${code}`)),
     // Auto-retry on error
-    retry({ delay: (e) => {
-      console.error(`Log file watch error: ${e}`);
-      return timer(errorRetryDelayMs);
-    }}),
+    retry({
+      delay: (e) => {
+        console.error(`FDME log file watch error: ${e}`);
+        return timer(errorRetryDelayMs);
+      }
+    }),
     shareReplay({ refCount: true, bufferSize: 1 })
   );
 }

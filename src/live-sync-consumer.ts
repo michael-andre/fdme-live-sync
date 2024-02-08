@@ -2,9 +2,11 @@ import { FirebaseApp, initializeApp } from "firebase/app";
 import { CustomProvider, initializeAppCheck } from "firebase/app-check";
 import { FieldValue, collection, doc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore/lite";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { MatchUpdate } from "./main";
-import { EMPTY, Observable, Subscription, combineLatest, mergeMap, retry, scan, startWith, switchMap, throttleTime } from "rxjs";
 import { merge } from "lodash";
+import { EMPTY, Observable, Subscription, combineLatest, mergeMap, retry, scan, startWith, switchMap, throttleTime, timer } from "rxjs";
+import { MatchUpdate } from "./main";
+
+const errorRetryDelayMs = 30000;
 
 type AppCheckTokenRequest = Readonly<{ appId: string; }>
 type AppCheckToken = Readonly<{ token: string, expiresInMillis: number }>;
@@ -87,15 +89,16 @@ export class LiveSyncConsumer {
                 console.log("Failed to send update: " + error);
               }
             }),
-            retry({ delay: 30000 })
+            // Auto-retry on error
+            retry({
+              delay: (e) => {
+                console.error(`Live reporting error: ${e}`);
+                return timer(errorRetryDelayMs);
+              }
+            }),
           );
       })
-    ).subscribe({
-      error: (e) => {
-        console.error("Live sync consumer error");
-        console.error(e);
-      }
-    });
+    ).subscribe();
   }
 
 }

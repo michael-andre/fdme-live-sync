@@ -8,28 +8,30 @@ import { MatchUpdate } from "./main";
 import { exhaustMapLatest } from "./rx-utils";
 
 const windowScanDelayMs = 5000;
+const sourcesRetryDelayMs = 5000;
 const captureWindowRetryDelayMs = 5000;
 
 export function observeScoreSheetUpdates(testMode: boolean): Observable<MatchUpdate | null> {
-
   return (testMode ? of("@test") : observeScoreSheetWindowId()).pipe(
     switchMap(sourceId => {
       console.debug(`FDME window: ${sourceId}`);
       return sourceId ? observeScoreSheetCaptureData(sourceId).pipe(
         withLatestFrom(defer(() => initDataMatcher())),
-        exhaustMapLatest(([ captureData, ocrMatcher ]) => ocrMatcher(captureData)),
+        exhaustMapLatest(([captureData, ocrMatcher]) => ocrMatcher(captureData)),
         scan((state, update) => merge({}, state, update), {} as MatchUpdate),
         distinctUntilChanged(isEqual),
         tap(u => {
           console.debug(`FDME update: ${JSON.stringify(u)}`);
         }),
-        // Auto-retry on error
-        retry({ delay: (e) => {
-          console.error(`Scorepad updates error: ${e}`);
-          return timer(captureWindowRetryDelayMs);
-        }}),
         share()
       ) : EMPTY;
+    }),
+    // Auto-retry on error
+    retry({
+      delay: (e) => {
+        console.error(`FDME updates error: ${e}`);
+        return timer(sourcesRetryDelayMs);
+      }
     }),
     share()
   );
@@ -92,7 +94,7 @@ async function createOcrScheduler(whiteList: string) {
       cacheMethod: "read",
       gzip: false,
       errorHandler: reject
-  }).then(resolve));
+    }).then(resolve));
   await worker.setParameters({
     tessedit_char_whitelist: whiteList,
     tessedit_pageseg_mode: tesseract.PSM.SINGLE_WORD
@@ -127,10 +129,13 @@ function observeScoreSheetCaptureData(sourceId: string): Observable<CaptureData>
     };
   }).pipe(
     repeat({ delay: captureWindowRetryDelayMs }),
-    retry({ delay: (e) => {
-      console.error(`Capture window error: ${e}`);
-      return timer(captureWindowRetryDelayMs);
-    }}),
+    // Auto-retry on error
+    retry({
+      delay: (e) => {
+        console.error(`FDME capture window error: ${e}`);
+        return timer(captureWindowRetryDelayMs);
+      }
+    }),
     share()
   );
 }

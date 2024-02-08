@@ -1,12 +1,12 @@
+import { entries, isEqual, merge } from "lodash";
 import * as net from "net";
 import * as os from "os";
 import { Observable, distinctUntilChanged, map, mergeMap, retry, scan, share, tap, timer } from "rxjs";
 import { MatchUpdate } from "./main";
-import { entries, isEqual, merge } from "lodash";
 
 const scorepadServerPort = 4001;
 const serverRetryDelayMs = 10000;
-const errorRetryDelay = 5000;
+const errorRetryDelayMs = 5000;
 
 /**
  * Start a local TCP server for Scorepad connection and parse received data.
@@ -23,10 +23,12 @@ export function observeScorepadUpdates(): Observable<MatchUpdate> {
       console.debug(`Scorepad update: ${JSON.stringify(u)}`);
     }),
     // Auto-retry on error
-    retry({ delay: (e) => {
-      console.error(`Scorepad updates error: ${e}`);
-      return timer(errorRetryDelay);
-    }}),
+    retry({
+      delay: (e) => {
+        console.error(`Scorepad updates error: ${e}`);
+        return timer(errorRetryDelayMs);
+      }
+    }),
     share()
   )
 }
@@ -37,14 +39,13 @@ function findLocalEthernetHost(): string | null {
     ?.[1]
     ?.find(i => i.family == "IPv4")
     ?.address
-  ?? null;
+    ?? null;
 }
 
 function startScorepadServer(): Observable<Buffer> {
   return new Observable<net.Socket>(sub => {
     const host = findLocalEthernetHost();
     if (!host) throw Error("Local wired network interface not found");
-    console.debug(`Network interface: ${host}`);
     const server = net.createServer();
     server.on("connection", (socket) => {
       console.log(`Scorepad client connected from ${socket.remoteAddress}:${socket.remotePort}`);
@@ -55,18 +56,24 @@ function startScorepadServer(): Observable<Buffer> {
       sub.error(e);
     });
     server.listen(scorepadServerPort, host, () => {
-      console.log("Scorepad server started");
+      console.log(`Scorepad server started on ${host}:${scorepadServerPort}`);
     });
     return () => {
       try {
         server.close(() => console.debug("Scorepad server closed"));
-        server.unref();  
+        server.unref();
       } catch (e) {
         console.error(`Failed to close server: ${e}`);
       }
     };
   }).pipe(
-    retry({ delay: serverRetryDelayMs }),
+    // Auto-retry on error
+    retry({
+      delay: (e) => {
+        console.error(`Scorepad server error: ${e}`);
+        return timer(serverRetryDelayMs);
+      }
+    }),
     mergeMap(connection => new Observable<Buffer>(sub => {
       connection.on("data", (frame) => sub.next(frame));
       connection.on("close", () => sub.complete());
@@ -83,7 +90,13 @@ function startScorepadServer(): Observable<Buffer> {
         }
       };
     }).pipe(
-      retry({ delay: serverRetryDelayMs })
+      // Auto-retry on error
+      retry({
+        delay: (e) => {
+          console.error(`Scorepad connection error: ${e}`);
+          return timer(serverRetryDelayMs);
+        }
+      })
     ))
   );
 }
