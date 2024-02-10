@@ -1,5 +1,5 @@
 import * as path from "path";
-import { Menu, MenuItem, Tray, app, nativeTheme } from "electron";
+import { Menu, MenuItem, Tray, app, nativeImage, nativeTheme } from "electron";
 import { Observable, combineLatest, distinctUntilChanged, startWith } from "rxjs";
 import { SourceState } from "./main";
 
@@ -37,5 +37,7 @@ function getTrayImage() {
 }
 
 function getMenuIcon(state: SourceState) {
-  return path.join(__dirname, "..", "assets", `source-${state}.png`);
+  return nativeImage.createFromPath(
+    path.join(__dirname, "..", "assets", `source-${state}.png`)
+  ).resize({ height: 16, width: 16 });
 }
