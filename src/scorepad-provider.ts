@@ -54,7 +54,7 @@ export class ScorepadSource {
 
   private async findLocalEthernetInterfaceHost(): Promise<string | null> {
     return entries(os.networkInterfaces())
-      .find(([k]) => k.startsWith("eth"))
+      .find(([k]) => k.toLowerCase().startsWith("eth"))
       ?.[1]
       ?.find(i => i.family == "IPv4")
       ?.address
