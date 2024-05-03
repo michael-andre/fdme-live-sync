@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+  <html lang="en">
+  <meta charset="UTF-8">
+  <title>Live score</title>
+  <meta name="viewport" content="width=1920,height=1080">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="">
+  <style>
+    body {
+      background: rgba(128, 128, 128, 1);
+      position: absolute;
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      display: flex;
+      justify-content: left;
+      align-items: start;
+      padding: 3% 5%;
+    }
+    .overlay {
+      color: black;
+      font-family: "Bebas Neue", sans-serif;
+      font-weight: 400;
+      font-style: normal;
+      display: inline-flex;
+      align-items: center;
+      filter: drop-shadow(0px 0px 1vw rgba(0,0,0,.5333333333));
+    }
+    .skewed-background::before {
+      content: "";
+      width: 100%;
+      height: 100%;
+      top: 0;
+      left: 0;
+      z-index: -1;
+      position: absolute;
+      transform: skew(-.3217rad);
+    }
+    .chrono {
+      font-size: 1.8vw;
+      position: relative;
+      padding: 3%;
+      width: 6.5vw;
+      text-align: center;
+      margin-right: -1px;
+    }
+    .chrono::before {
+      background: #fedd00;
+    }
+    .score {
+      font-size: 2vw;
+      display: flex;
+      padding: 5% 5%;
+      position: relative;
+    }
+    .score::before {
+      background: #fff;
+    }
+    .score data {
+      display: block;
+      width: 2.5vw;
+      text-align: center;
+    }
+  </style>
+  <body>
+    <div class="overlay">
+      <time class="chrono skewed-background" id="chrono">00:00</time>
+      <div class="score skewed-background">
+        <data id="homeScore"></data>
+        –
+        <data id="awayScore"></data>
+      </div>
+    </div>
+    <script>
+      const homeScore = document.getElementById("homeScore");
+      const awayScore = document.getElementById("awayScore");
+      const chrono = document.getElementById("chrono");
+      function connect() {
+        const ws = new WebSocket("ws://" + location.host + "/updates");
+        ws.onerror = (e) => {
+          console.error("WS error");
+          ws.close();
+        };
+        ws.onmessage = (data) => {
+          const update = JSON.parse(data.data);
+          console.debug(update);
+          homeScore.innerText = update.homeScore ?? "";
+          awayScore.innerText = update.awayScore ?? "";
+          const min = Math.floor(update.chrono / 60);
+          const sec = update.chrono % 60;
+          chrono.innerHTML = String(min).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
+        };
+        ws.onclose = (e) => {
+          console.error("WS closed");
+          console.error(e);
+          setTimeout(() => connect(), 2000);
+        };
+      }
+      connect();
+    </script>
+  </body>
+</html>

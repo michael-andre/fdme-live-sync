@@ -1,10 +1,10 @@
 import { app } from "electron";
 import log from "electron-log/main";
-import { Subscription } from "rxjs";
-import { ScoreSheetSource } from "./score-sheet-provider";
+import { Subscription, filter } from "rxjs";
 import { LiveSyncConsumer } from "./live-sync-consumer";
-import { LocalBroadcastConsumer } from "./local-broadcast";
 import { configureTrayIcon } from "./menu";
+import { ScoreOverlayConsumer } from "./score-overlay-consumer";
+import { ScoreSheetSource } from "./score-sheet-provider";
 import { ScorepadSource } from "./scorepad-provider";
 
 export type SourceState = "off" | "ready" | "connected" | "error";
@@ -21,15 +21,15 @@ app.whenReady().then(() => {
     const testMode = app.commandLine.getSwitchValue("mode") == "test";
     if (testMode) console.debug("Running in test mode");
 
-    const scoreSheetSoure = new ScoreSheetSource(testMode);
+    const scoreSheetSource = new ScoreSheetSource(testMode);
     const scorepadSource = new ScorepadSource();
 
     // Configure tray icon
-    trayCallback = configureTrayIcon(scoreSheetSoure.state, scorepadSource.state);
+    trayCallback = configureTrayIcon(scoreSheetSource.state, scorepadSource.state);
 
     updatesSub = new Subscription();
-    updatesSub.add(new LiveSyncConsumer().subscribe(scoreSheetSoure.updates, scorepadSource.updates));
-    updatesSub.add(new LocalBroadcastConsumer("192.168.0.200").subscribe(scorepadSource.updates));
+    updatesSub.add(new LiveSyncConsumer().subscribe(scoreSheetSource.updates, scorepadSource.updates));
+    updatesSub.add(new ScoreOverlayConsumer(4000).subscribe(scoreSheetSource.updates.pipe(filter((u): u is MatchUpdate => u != null))));
   } catch (error) {
     console.error("Initialization error");
     console.error(error);
