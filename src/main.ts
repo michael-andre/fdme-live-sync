@@ -1,6 +1,6 @@
 import { app } from "electron";
 import log from "electron-log/main";
-import { Subscription, filter } from "rxjs";
+import { Subscription } from "rxjs";
 import { LiveSyncConsumer } from "./live-sync-consumer";
 import { configureTrayIcon } from "./menu";
 import { ScoreOverlayConsumer } from "./score-overlay-consumer";
@@ -29,7 +29,7 @@ app.whenReady().then(() => {
 
     updatesSub = new Subscription();
     updatesSub.add(new LiveSyncConsumer().subscribe(scoreSheetSource.updates, scorepadSource.updates));
-    updatesSub.add(new ScoreOverlayConsumer(4000).subscribe(scoreSheetSource.updates.pipe(filter((u): u is MatchUpdate => u != null))));
+    updatesSub.add(new ScoreOverlayConsumer(4000).subscribe(scorepadSource.updates));
   } catch (error) {
     console.error("Initialization error");
     console.error(error);
