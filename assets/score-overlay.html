@@ -92,7 +92,7 @@
           awayScore.innerText = update.awayScore ?? "";
           const min = Math.floor(update.chrono / 60);
           const sec = update.chrono % 60;
-          chrono.innerHTML = String(min).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
+          chrono.innerHTML = !isNaN(min) ? String(min).padStart(2, "0") + ":" + String(sec).padStart(2, "0") : "";
         };
         ws.onclose = (e) => {
           console.error("WS closed");
