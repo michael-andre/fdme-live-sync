@@ -1,7 +1,10 @@
 import { entries, isEqual, merge } from "lodash";
 import * as net from "net";
 import * as os from "os";
-import { BehaviorSubject, EMPTY, Observable, defer, distinctUntilChanged, map, mergeMap, repeat, retry, scan, share, switchMap, tap, timer } from "rxjs";
+import {
+  BehaviorSubject, EMPTY, Observable, defer, distinctUntilChanged, map, mergeMap, repeat, retry, scan, share, switchMap,
+  tap, timer
+} from "rxjs";
 import { MatchUpdate, SourceState } from "./main";
 
 export class ScorepadSource {
@@ -109,7 +112,8 @@ export class ScorepadSource {
 
   /**
    * Parse a data frame to extract chrono and score information.
-   * https://static.bodet-sport.com/images/stories/EN/support/Pdfs/manuals/Scorepad/608264-Network%20output%20and%20protocols-Scorepad.pdf
+   * https://static.bodet-sport.com/images/stories/EN/support/Pdfs/manuals/Scorepad/
+   * 608264-Network%20output%20and%20protocols-Scorepad.pdf
    * @param frame A raw frame for Scorepad connection
    * @returns Parsed MatchUpdate with chrono and score
    */

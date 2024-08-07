@@ -28,7 +28,7 @@ export class ScoreOverlayConsumer {
       throttleTime(200, undefined, { leading: true, trailing: true })
     ).subscribe({
         next: update => subject.next(update)
-      });
+    });
     const wsServer = new Server({ server: httpServer, path: "/updates" });
     wsServer.on("listening", () => {
       console.info(`Score overlay server listening on ${JSON.stringify(httpServer.address())}`);
@@ -53,7 +53,7 @@ export class ScoreOverlayConsumer {
     });
 
     httpServer.on("error", e => {
-      console.error("Score overlay WS server error");
+      console.error("Score overlay HTTP server error");
       console.error(e);
     });
     httpServer.listen(this.port);
