@@ -4,7 +4,10 @@ import { isEqual, merge } from "lodash";
 import * as os from "os";
 import * as path from "path";
 import ReverseReader from "readline-reverse";
-import { BehaviorSubject, EMPTY, NEVER, Observable, defer, distinctUntilChanged, of, repeat, retry, scan, share, shareReplay, startWith, switchMap, tap, timer, withLatestFrom } from "rxjs";
+import {
+  BehaviorSubject, EMPTY, NEVER, Observable, defer, distinctUntilChanged, of, repeat, retry, scan, share, shareReplay,
+  startWith, switchMap, tap, timer, withLatestFrom
+} from "rxjs";
 import tesseract from "tesseract.js";
 import { MatchUpdate } from "./main";
 import { exhaustMapLatest } from "./rx-utils";

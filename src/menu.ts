@@ -1,9 +1,11 @@
-import * as path from "path";
 import { Menu, MenuItem, Tray, app, nativeImage, nativeTheme } from "electron";
+import * as path from "path";
 import { Observable, combineLatest, distinctUntilChanged, startWith } from "rxjs";
 import { SourceState } from "./main";
 
-export function configureTrayIcon(scoreSheetState: Observable<SourceState>, scorepadState: Observable<SourceState>): () => void {
+export function configureTrayIcon(
+  scoreSheetState: Observable<SourceState>, scorepadState: Observable<SourceState>
+): () => void {
   const appTray = new Tray(getTrayImage());
 
   appTray.setToolTip("Synchronisation FDME");

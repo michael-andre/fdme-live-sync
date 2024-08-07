@@ -61,7 +61,10 @@ export class LiveSyncConsumer {
         scan((state, [scoreSheetUpdate, scorepadUpdate]) => {
           if (!scoreSheetUpdate?.matchCode) {
             return {};
-          } else if (state.homeScore && state.awayScore && state.chrono && scorepadUpdate?.awayScore == 0 && scorepadUpdate?.homeScore == 0) {
+          } else if (
+            state.homeScore && state.awayScore && state.chrono
+            && scorepadUpdate?.awayScore == 0 && scorepadUpdate?.homeScore == 0
+          ) {
             // Prevent accidental reset
             return state;
           } else {
