@@ -41,11 +41,11 @@ export class ScoreSheetSource {
     }).pipe(
       exhaustMapLatest(path => this.parseActiveMatchCode(path)),
       distinctUntilChanged(),
-      tap(code => console.debug(`Match code: ${code}`)),
+      tap(code => { console.debug(`Match code: ${code ?? "-"}`); }),
       // Auto-retry on error
       retry({
         delay: (e) => {
-          console.error(`FDME log file watch error: ${e}`);
+          console.error("FDME log file watch error", e);
           this.state.next("error");
           return timer(this.logFileRetryDelayMs);
         }
@@ -61,7 +61,7 @@ export class ScoreSheetSource {
         types: ["window"],
         thumbnailSize: { width: 0, height: 0 }
       });
-      return sources.filter(w => w.name == "Feuille de Table").at(0)?.id ?? null;
+      return sources.find(w => w.name == "Feuille de Table")?.id ?? null;
     }).pipe(
       repeat({ delay: this.captureWindowsScanDelayMs }),
       distinctUntilChanged()
@@ -71,7 +71,7 @@ export class ScoreSheetSource {
     this.activeMatchCode.pipe(
       switchMap(matchCode => matchCode ? this.captureWindowId.pipe(
         switchMap(sourceId => {
-          console.debug(`FDME window: ${sourceId}`);
+          console.debug(`FDME window: ${sourceId ?? ""}`);
           if (sourceId) {
             return this.createCaptureWindow(sourceId).pipe(
               withLatestFrom(defer(() => this.initDataMatcher())),
@@ -92,7 +92,7 @@ export class ScoreSheetSource {
       // Auto-retry on error
       retry({
         delay: (e) => {
-          console.error(`FDME updates error: ${e}`);
+          console.error("FDME updates error", e);
           this.state.next("error");
           return timer(this.processingErrorRetryDelayMs);
         }
@@ -111,14 +111,15 @@ export class ScoreSheetSource {
           nodeIntegration: true
         }
       });
-      const dataListener = (_: unknown, data: CaptureData) => sub.next(data);
-      captureWindow.loadFile("assets/window.html", { hash: sourceId });
+      const dataListener = (_: unknown, data: CaptureData) => { sub.next(data); };
+      captureWindow.loadFile("assets/window.html", { hash: sourceId })
+        .catch((err: unknown) => { console.error("Capture window loading error", err) });
       captureWindow.webContents.on("console-message", (_event, _level, message) => {
         console.debug(message);
       });
       const ipcChannel = `capture-data:${sourceId}`;
       ipcMain.on(ipcChannel, dataListener);
-      captureWindow.on("closed", () => sub.complete());
+      captureWindow.on("closed", () => { sub.complete(); });
       this.state.next("connected");
       return () => {
         ipcMain.off(ipcChannel, dataListener);
@@ -130,7 +131,7 @@ export class ScoreSheetSource {
       // Auto-retry on error
       retry({
         delay: (e) => {
-          console.error(`FDME capture window error: ${e}`);
+          console.error("FDME capture window error", e);
           this.state.next("error");
           return timer(this.captureWindowRetryDelayMs);
         }
@@ -157,13 +158,14 @@ export class ScoreSheetSource {
   }
 
   private async createOcrMatcher<T>(whiteList: string, regex: RegExp, map: (match: RegExpMatchArray) => T) {
-    const worker = await new Promise<tesseract.Worker>((resolve, reject) =>
+    const worker = await new Promise<tesseract.Worker>((resolve, reject) => {
       tesseract.createWorker("eng", tesseract.OEM.TESSERACT_ONLY, {
         cachePath: path.join(__dirname, "..", "assets", "ocr-data"),
         cacheMethod: "read",
         gzip: false,
         errorHandler: reject
-      }).then(resolve));
+      }).then(resolve).catch(((err: unknown) => { reject(err as Error) }))
+    });
     await worker.setParameters({
       tessedit_char_whitelist: whiteList,
       tessedit_pageseg_mode: tesseract.PSM.SINGLE_WORD
@@ -177,11 +179,11 @@ export class ScoreSheetSource {
         const text = (await result).data.text.trim();
         const match = text.match(regex);
         if (!match) {
-          console.warn(`Unrecognized data: '${text}' (against ${regex})`);
+          console.warn(`Unrecognized data: '${text}' (against ${regex.toString()})`);
         }
         return match ? map(match) : undefined;
       } catch (error) {
-        console.error("OCR error: " + error);
+        console.error("OCR error", error);
         return undefined;
       }
     };
@@ -192,7 +194,7 @@ export class ScoreSheetSource {
       const watcher = fs.watch(path, { encoding: "buffer" }, e => {
         if (e == "change") sub.next(path);
       });
-      return () => watcher.close();
+      return () => { watcher.close(); };
     }).pipe(
       startWith(path)
     );
@@ -205,11 +207,11 @@ export class ScoreSheetSource {
       const lines = await reader.read(10);
       const pattern = new RegExp("ouverture feuille table coderenc=([A-Z]{7})");
       for (const line of lines.reverse()) {
-        const match = line.match(pattern);
+        const match = pattern.exec(line);
         if (match) return match[1];
       }
     } catch (e) {
-      console.warn(`Failed to process log file: ${e}`);
+      console.warn("Failed to process log file", e);
     } finally {
       await reader.close();
     }

@@ -15,27 +15,29 @@ let updatesSub: Subscription | undefined;
 log.initialize({ preload: true });
 Object.assign(console, log.functions);
 
-app.whenReady().then(() => {
+app.whenReady()
+  .then(() => {
 
-  try {
-    const testMode = app.commandLine.getSwitchValue("mode") == "test";
-    if (testMode) console.debug("Running in test mode");
+    try {
+      const testMode = app.commandLine.getSwitchValue("mode") == "test";
+      if (testMode) console.debug("Running in test mode");
 
-    const scoreSheetSource = new ScoreSheetSource(testMode);
-    const scorepadSource = new ScorepadSource();
+      const scoreSheetSource = new ScoreSheetSource(testMode);
+      const scorepadSource = new ScorepadSource();
 
-    // Configure tray icon
-    trayCallback = configureTrayIcon(scoreSheetSource.state, scorepadSource.state);
+      // Configure tray icon
+      trayCallback = configureTrayIcon(scoreSheetSource.state, scorepadSource.state);
 
-    updatesSub = new Subscription();
-    updatesSub.add(new LiveSyncConsumer().subscribe(scoreSheetSource.updates, scorepadSource.updates));
-    updatesSub.add(new ScoreOverlayConsumer(4000).subscribe(scorepadSource.updates));
-  } catch (error) {
-    console.error("Initialization error");
-    console.error(error);
-  }
+      updatesSub = new Subscription();
+      updatesSub.add(new LiveSyncConsumer().subscribe(scoreSheetSource.updates, scorepadSource.updates));
+      updatesSub.add(new ScoreOverlayConsumer(4000).subscribe(scorepadSource.updates));
+    } catch (error) {
+      console.error("Initialization error");
+      console.error(error);
+    }
 
-});
+  })
+  .catch((err: unknown) => { console.log("App error", err); });
 
 app.on("before-quit", function () {
   updatesSub?.unsubscribe();
@@ -43,7 +45,7 @@ app.on("before-quit", function () {
 });
 
 app.on("window-all-closed", () => {
-  app.dock?.hide();
+  app.dock.hide();
 });
 
 export type MatchUpdate = Partial<{

@@ -13,7 +13,7 @@ export function configureTrayIcon(
     appTray.setImage(getTrayImage());
   });
 
-  const closeItem = new MenuItem({ label: "Fermer", type: "normal", role: "quit", click: () => app.quit() });
+  const closeItem = new MenuItem({ label: "Fermer", type: "normal", role: "quit", click: () => { app.quit(); } });
 
   const statesSub = combineLatest([
     scoreSheetState.pipe(distinctUntilChanged(), startWith<SourceState>("off")),

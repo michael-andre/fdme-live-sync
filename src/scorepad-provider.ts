@@ -28,7 +28,7 @@ export class ScorepadSource {
     repeat({ delay: this.scanInterfacesDelayMs }),
     retry({
       delay: (e) => {
-        console.error(`Scorepad server error: ${e}`);
+        console.error("Scorepad server error", e);
         this.state.next("error");
         return timer(this.serverRetryDelayMs);
       }
@@ -47,7 +47,7 @@ export class ScorepadSource {
     // Auto-retry on error
     retry({
       delay: (e) => {
-        console.error(`Scorepad updates error: ${e}`);
+        console.error("Scorepad updates error", e);
         this.state.next("error");
         return timer(this.processingErrorRetryDelayMs);
       }
@@ -55,13 +55,13 @@ export class ScorepadSource {
     share()
   );
 
-  private async findLocalEthernetInterfaceHost(): Promise<string | null> {
-    return entries(os.networkInterfaces())
+  private findLocalEthernetInterfaceHost(): Promise<string | null> {
+    return Promise.resolve(entries(os.networkInterfaces())
       .find(([k]) => k.toLowerCase().startsWith("eth"))
       ?.[1]
       ?.find(i => i.family == "IPv4")
       ?.address
-      ?? null;
+      ?? null);
   }
 
   private createTcpServer(host: string): Observable<net.Socket> {
@@ -69,7 +69,7 @@ export class ScorepadSource {
       const server = net.createServer();
       server.on("connection", (socket) => {
         this.state.next("connected");
-        console.log(`Scorepad client connected from ${socket.remoteAddress}:${socket.remotePort}`);
+        console.log(`Scorepad client connected: ${socket.remoteAddress ?? "-"}:${socket.remotePort?.toString() ?? ""}`);
         sub.next(socket);
       });
       server.on("error", e => {
@@ -78,14 +78,14 @@ export class ScorepadSource {
       });
       server.listen(this.scorepadServerPort, host, () => {
         this.state.next("ready");
-        console.log(`Scorepad server started on ${host}:${this.scorepadServerPort}`);
+        console.log(`Scorepad server started on ${host}:${this.scorepadServerPort.toString()}`);
       });
       return () => {
         try {
-          server.close(() => console.debug("Scorepad server closed"));
+          server.close(() => { console.debug("Scorepad server closed"); });
           server.unref();
         } catch (e) {
-          console.error(`Failed to close server: ${e}`);
+          console.error("Failed to close server", e);
         }
       };
     });
@@ -93,8 +93,8 @@ export class ScorepadSource {
 
   private observeDataFrame(connection: net.Socket): Observable<Buffer> {
     return new Observable<Buffer>(sub => {
-      connection.on("data", (frame) => sub.next(frame));
-      connection.on("close", () => sub.complete());
+      connection.on("data", (frame) => { sub.next(frame); });
+      connection.on("close", () => { sub.complete(); });
       connection.on("error", e => {
         console.warn(`Scorepad connection error: ${e}`);
         sub.error(e);
@@ -104,7 +104,7 @@ export class ScorepadSource {
           connection.destroy();
           connection.unref();
         } catch (e) {
-          console.error(`Failed to close connection: ${e}`);
+          console.error("Failed to close connection", e);
         }
       };
     });
