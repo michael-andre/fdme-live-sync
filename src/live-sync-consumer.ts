@@ -42,7 +42,7 @@ export class LiveSyncConsumer {
               expireTimeMillis: Date.now() + token.expiresInMillis
             }
           } catch (error) {
-            console.error("AppCheck error: " + error);
+            console.error("AppCheck error", error);
             throw Error("AppCheck error");
           }
         },
@@ -63,7 +63,7 @@ export class LiveSyncConsumer {
             return {};
           } else if (
             state.homeScore && state.awayScore && state.chrono
-            && scorepadUpdate?.awayScore == 0 && scorepadUpdate?.homeScore == 0
+            && scorepadUpdate?.awayScore == 0 && scorepadUpdate.homeScore == 0
           ) {
             // Prevent accidental reset
             return state;
@@ -77,7 +77,7 @@ export class LiveSyncConsumer {
             if (!update.matchCode) return;
             const liveUpdate: LiveUpdate = {
               chrono: update.chrono ?? null,
-              score: update?.homeScore != undefined && update?.awayScore != undefined
+              score: update.homeScore != undefined && update.awayScore != undefined
                 ? [update.homeScore, update.awayScore]
                 : null,
               timestamp: serverTimestamp()
@@ -86,13 +86,13 @@ export class LiveSyncConsumer {
             const firebaseDoc = doc(collection(LiveSyncConsumer.firestore, "liveUpdates"), update.matchCode);
             await setDoc(firebaseDoc, liveUpdate);
           } catch (error) {
-            console.log("Failed to send update: " + error);
+            console.log("Failed to send update", error);
           }
         }),
         // Auto-retry on error
         retry({
           delay: (e) => {
-            console.error(`Live reporting error: ${e}`);
+            console.error("Live reporting error", e);
             return timer(errorRetryDelayMs);
           }
         })

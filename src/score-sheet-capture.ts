@@ -13,32 +13,33 @@ const scoreBackgroundColor = 0xffffff;
 const sourceId = location.hash.substring(1);
 console.debug(`Configure capture window for '${sourceId}'`);
 
-window.addEventListener("DOMContentLoaded", async () => {
+async function setupCapture() {
 
   const stream = sourceId == "@test"
     ? createTestStream()
     : await navigator.mediaDevices.getUserMedia({
       audio: false,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       video: {
         mandatory: {
           chromeMediaSource: "desktop",
           chromeMediaSourceId: sourceId
         },
         cursor: "never"
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any
     });
   const track = stream.getVideoTracks()[0];
   const video = document.createElement("video");
 
-  video.onloadedmetadata = () => {
-    video.play();
+  video.onloadedmetadata = () => { 
+    video.play().catch((err: unknown) => { console.error("FDME capture playpack error", err); });
 
     const sub = new Observable(sub => {
-      const listener = () => sub.next();
+      const listener = () => { sub.next(); };
       listener();
       video.addEventListener("resize", listener);
-      return () => video.removeEventListener("resize", listener);
+      return () => { video.removeEventListener("resize", listener); };
     }).pipe(
       switchMap(() => timer(windowResizeDelayMs).pipe(
         concatMap(() => observeVideoSpots(video))
@@ -65,10 +66,14 @@ window.addEventListener("DOMContentLoaded", async () => {
   video.srcObject = stream;
   document.body.append(video);
 
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  setupCapture().catch((err: unknown) => { console.error("FDME capture setup error", err); })
 });
 
 function observeVideoSpots(video: HTMLVideoElement): Observable<CaptureData> {
-  console.debug(`Window size: ${video.videoWidth} x ${video.videoHeight}`);
+  console.debug(`Window size: ${video.videoWidth.toString()} x ${video.videoHeight.toString()}`);
   let homeRect: Rectangle | null;
   let chronoSpot: DataCaptureSpot | null = null;
   let chronoStartedSpot: ColorCheckSpot | null = null;
@@ -90,7 +95,7 @@ function observeVideoSpots(video: HTMLVideoElement): Observable<CaptureData> {
           if (!ctx) throw new Error("Invalid context");
           ctx.drawImage(video, 0, 0);
           homeRect = findColorRect(ctx, homeTeamBackgroundColor, 0, 1, 0);
-          console.debug("Top bar height: " + homeRect?.y);
+          console.debug("Top bar height: " + (homeRect?.y.toString() ?? "-"));
           initCtx = ctx;
         }
         return initCtx;
@@ -135,12 +140,12 @@ function observeVideoSpots(video: HTMLVideoElement): Observable<CaptureData> {
     const newChronoStarted = chronoStartedSpot?.matchColor(chronoStopColor);
     const reportChronoStarted = newChronoStarted !== chronoStarted;
     chronoStarted = newChronoStarted;
-    return {
+    return Promise.resolve({
       chrono: chronoSpot?.peekNewData() ?? undefined,
       chronoStarted: reportChronoStarted ? chronoStarted : undefined,
       homeScore: homeScoreSpot?.peekNewData() ?? undefined,
       awayScore: awayScoreSpot?.peekNewData() ?? undefined
-    } as CaptureData;
+    } as CaptureData);
 
   }).pipe(repeat({ delay: checkDelayMs }));
 }
@@ -154,17 +159,19 @@ export type CaptureData = Partial<Readonly<{
 
 abstract class Spot {
 
-  protected readonly context = document.createElement("canvas")
-    .getContext("2d", { willReadFrequently: true })!;
+  protected readonly context: CanvasRenderingContext2D;
 
   constructor(protected source: CanvasImageSource, protected rect: Rectangle) {
+    const context = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+    if (!context) throw new Error("Invalid context");
+    this.context = context;
     this.context.canvas.width = rect.width;
     this.context.canvas.height = rect.height;
     this.context.imageSmoothingEnabled = false;
   }
 
   protected drawSource() {
-    this.context?.drawImage(
+    this.context.drawImage(
       this.source,
       this.rect.x, this.rect.y, this.rect.width, this.rect.height,
       0, 0, this.context.canvas.width, this.context.canvas.height
@@ -195,8 +202,8 @@ class ColorCheckSpot extends Spot {
 
   matchColor(color: number): boolean {
     this.drawSource();
-    const data = this.context?.getImageData(0, 0, 1, 1);
-    return !!data && matchColor(data, 0, color);
+    const data = this.context.getImageData(0, 0, 1, 1);
+    return data.data.length > 0 && matchColor(data, 0, color);
   }
 
 }
